@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from pathlib import Path
 
+import numpy as np
 import polars as pl
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -294,6 +295,233 @@ def build_vol_features(cutoff: date, *, cache: bool = True) -> pl.DataFrame:
     if cache:
         df.write_parquet(path)
     return df
+
+
+FUNNEL_WINDOWS = [("7d", 7), ("30d", 30), ("90d", 90)]
+FUNNEL_SUM_COLS = ["search_to_ord", "cat_to_ord", "search_to_cart", "cat_to_cart"]
+FUNNEL_HAS_COLS = [
+    "has_search_to_ord",
+    "has_cat_to_ord",
+    "has_search_to_cart",
+    "has_cat_to_cart",
+]
+
+
+def build_funnel_features(cutoff: date, *, cache: bool = True) -> pl.DataFrame:
+    """Channel funnel window sums and lifetime has_* flags (no densify).
+
+    Args:
+        cutoff: Last date allowed in history.
+        cache: ``features_{cutoff}_funnel_v1.parquet``.
+
+    Returns:
+        One row per user_id: ``{search,cat}_to_{ord,cart}_sum_{7,30,90}d`` and
+        ``hist_has_*`` lifetime max flags. Missing users filled with 0.
+
+    Example:
+        extra = build_funnel_features(date(2026, 1, 14))
+        df = load_named("primary").join(extra, on="user_id", how="left")
+    """
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    path = CACHE_DIR / f"features_{cutoff.isoformat()}_funnel_v1.parquet"
+    if cache and path.exists():
+        return pl.read_parquet(path)
+
+    lf = pl.scan_parquet(PARQUET_PATH)
+    users = lf.select(pl.col("user_id").unique())
+    lf_hist = lf.filter(pl.col("event_date") <= cutoff)
+    exprs: list[pl.Expr] = []
+    for w_name, n_days in FUNNEL_WINDOWS:
+        start = cutoff - timedelta(days=n_days - 1)
+        mask = pl.col("event_date").is_between(start, cutoff)
+        for col in FUNNEL_SUM_COLS:
+            exprs.append(
+                pl.when(mask).then(pl.col(col)).otherwise(0).sum().alias(f"{col}_sum_{w_name}")
+            )
+    for col in FUNNEL_HAS_COLS:
+        exprs.append(pl.max(col).alias(f"hist_{col}"))
+    funnel = lf_hist.group_by("user_id").agg(exprs)
+    df = users.join(funnel, on="user_id", how="left").collect()
+    nums = [c for c in df.columns if c != "user_id"]
+    df = df.with_columns([pl.col(c).fill_null(0) for c in nums])
+    if cache:
+        df.write_parquet(path)
+    return df
+
+
+def attach_funnel(df: pl.DataFrame) -> pl.DataFrame:
+    """Left-join funnel_v1 per cutoff already on ``df``.
+
+    Args:
+        df: Table with user_id and cutoff.
+
+    Returns:
+        Same rows plus funnel columns (idempotent).
+
+    Example:
+        train = attach_funnel(concat_train_fit())
+    """
+    if "search_to_ord_sum_30d" in df.columns:
+        return df
+    parts: list[pl.DataFrame] = []
+    for co in df["cutoff"].unique().to_list():
+        part = df.filter(pl.col("cutoff") == co)
+        parts.append(part.join(build_funnel_features(co), on="user_id", how="left"))
+    return pl.concat(parts, how="vertical_relaxed")
+
+
+def build_btyd_features(cutoff: date, *, cache: bool = True) -> pl.DataFrame:
+    """Purchase-process RFM/AOV from sparse order days (no densify, no labels).
+
+    Args:
+        cutoff: Last date in history.
+        cache: ``features_{cutoff}_btyd_v1.parquet``.
+
+    Returns:
+        user_id plus btyd_frequency (repeat order-days), btyd_recency_tx (first→last
+        order days), btyd_T (first order→cutoff), btyd_aov, btyd_n_purch,
+        btyd_days_since_last (9999 if never ordered).
+
+    Example:
+        btyd = build_btyd_features(date(2026, 1, 14))
+    """
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    path = CACHE_DIR / f"features_{cutoff.isoformat()}_btyd_v1.parquet"
+    if cache and path.exists():
+        return pl.read_parquet(path)
+
+    lf = pl.scan_parquet(PARQUET_PATH)
+    users = lf.select(pl.col("user_id").unique())
+    purch = (
+        lf.filter((pl.col("event_date") <= cutoff) & (pl.col("to_ord") > 0))
+        .group_by("user_id")
+        .agg(
+            btyd_n_purch=pl.len(),
+            first_purch=pl.col("event_date").min(),
+            last_purch=pl.col("event_date").max(),
+            purch_gmv=pl.sum("gmv"),
+        )
+    )
+    df = users.join(purch, on="user_id", how="left").collect()
+    cutoff_lit = pl.lit(cutoff)
+    df = df.with_columns(
+        btyd_n_purch=pl.col("btyd_n_purch").fill_null(0),
+        purch_gmv=pl.col("purch_gmv").fill_null(0.0),
+        btyd_frequency=pl.max_horizontal(pl.col("btyd_n_purch").fill_null(0) - 1, pl.lit(0)),
+        btyd_recency_tx=pl.when(pl.col("first_purch").is_null())
+        .then(0)
+        .otherwise((pl.col("last_purch") - pl.col("first_purch")).dt.total_days()),
+        btyd_T=pl.when(pl.col("first_purch").is_null())
+        .then(0)
+        .otherwise((cutoff_lit - pl.col("first_purch")).dt.total_days()),
+        btyd_days_since_last=pl.when(pl.col("last_purch").is_null())
+        .then(9999)
+        .otherwise((cutoff_lit - pl.col("last_purch")).dt.total_days()),
+        btyd_aov=pl.col("purch_gmv").fill_null(0.0) / (pl.col("btyd_n_purch").fill_null(0) + 1e-9),
+    ).select(
+        "user_id",
+        "btyd_n_purch",
+        "btyd_frequency",
+        "btyd_recency_tx",
+        "btyd_T",
+        "btyd_aov",
+        "btyd_days_since_last",
+    )
+    if cache:
+        df.write_parquet(path)
+    return df
+
+
+def attach_btyd(df: pl.DataFrame) -> pl.DataFrame:
+    """Join btyd_v1 per cutoff already on ``df``.
+
+    Args:
+        df: Table with user_id and cutoff.
+
+    Returns:
+        Rows plus RFM/AOV columns (idempotent).
+
+    Example:
+        train = attach_btyd(concat_train_fit())
+    """
+    if "btyd_frequency" in df.columns:
+        return df
+    parts: list[pl.DataFrame] = []
+    for co in df["cutoff"].unique().to_list():
+        part = df.filter(pl.col("cutoff") == co)
+        parts.append(part.join(build_btyd_features(co), on="user_id", how="left"))
+    return pl.concat(parts, how="vertical_relaxed")
+
+
+def bgnbd_moments(frequency: np.ndarray, T: np.ndarray) -> dict[str, float]:
+    """Rough BG-NBD params from purchase rates (no labels).
+
+    Args:
+        frequency: Repeat purchase counts (x).
+        T: Observation age in days from first purchase (0 if never).
+
+    Returns:
+        Dict r, alpha, a, b for p_alive / expected purchases.
+
+    Example:
+        params = bgnbd_moments(freq, T)
+    """
+    import numpy as np
+
+    freq = np.asarray(frequency, dtype=np.float64)
+    t = np.asarray(T, dtype=np.float64)
+    rates = (freq + 1.0) / (t + 1.0)
+    mu = float(rates.mean())
+    var = float(rates.var())
+    alpha = float(mu / max(var, 1e-8))
+    r = float(max(mu * alpha, 1e-3))
+    alpha = float(max(alpha, 1e-3))
+    long = t > 60
+    p0 = float(((long) & (freq == 0)).mean()) if long.any() else float((freq == 0).mean())
+    p0 = min(max(p0, 0.05), 0.9)
+    a = 0.5
+    b = float(max(0.5, (1.0 - p0) / p0))
+    return {"r": r, "alpha": alpha, "a": a, "b": b}
+
+
+def add_bgnbd_derived(df: pl.DataFrame, params: dict[str, float]) -> pl.DataFrame:
+    """Add p_alive, E[purchases 30d], E[gmv] from BG-NBD-like closed forms.
+
+    Args:
+        df: Rows with btyd_frequency, btyd_recency_tx, btyd_T, btyd_aov, btyd_days_since_last.
+        params: r, alpha, a, b from ``bgnbd_moments``.
+
+    Returns:
+        df plus btyd_p_alive, btyd_e_purch_30, btyd_e_gmv.
+
+    Example:
+        work = add_bgnbd_derived(attach_btyd(df), params)
+    """
+    import numpy as np
+
+    if "btyd_p_alive" in df.columns:
+        return df
+    r, alpha, a, b = params["r"], params["alpha"], params["a"], params["b"]
+    x = df["btyd_frequency"].to_numpy().astype(np.float64)
+    t_x = df["btyd_recency_tx"].to_numpy().astype(np.float64)
+    T = df["btyd_T"].to_numpy().astype(np.float64)
+    aov = df["btyd_aov"].to_numpy().astype(np.float64)
+    dsl = df["btyd_days_since_last"].to_numpy().astype(np.float64)
+    never = T <= 0
+    t_x = np.minimum(t_x, T)
+    ratio = np.power((alpha + T + 1e-9) / (alpha + t_x + 1e-9), r + x)
+    p_alive = 1.0 / (1.0 + (a / (b + x + 1e-9)) * ratio)
+    mean_ip = np.where(x > 0, t_x / np.maximum(x, 1.0), np.maximum(T, 1.0))
+    p_emp = 1.0 / (1.0 + dsl / (mean_ip + 7.0))
+    p_alive = np.where(never, 0.0, 0.5 * p_alive + 0.5 * p_emp)
+    lam = (r + x) / (alpha + T + 1e-9)
+    e_purch = np.where(never, 0.0, lam * 30.0 * p_alive)
+    e_gmv = e_purch * np.clip(aov, 0, None)
+    return df.with_columns(
+        btyd_p_alive=pl.Series(p_alive),
+        btyd_e_purch_30=pl.Series(e_purch),
+        btyd_e_gmv=pl.Series(e_gmv),
+    )
 
 
 def attach_vol(df: pl.DataFrame) -> pl.DataFrame:
