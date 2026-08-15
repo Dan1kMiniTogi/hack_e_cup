@@ -1,0 +1,274 @@
+{
+  "global": {
+    "n_rows": 30631006,
+    "n_users": 250000,
+    "min_date": "2025-01-01",
+    "max_date": "2026-02-13",
+    "n_calendar_span_days": 409,
+    "n_days_with_rows": 409,
+    "null_cells_total": 0,
+    "daily_n_rows": {
+      "min": 43516,
+      "p50": 69960,
+      "p90": 94669,
+      "max": 103617,
+      "mean": 74892.43520782396
+    },
+    "daily_gmv_sum": {
+      "min": 374066.46901643544,
+      "p50": 661632.1042401502,
+      "p90": 823997.2926806526,
+      "max": 1093028.438223811,
+      "mean": 665285.0221417458
+    },
+    "daily_n_users": {
+      "min": 43516,
+      "p50": 69960,
+      "p90": 94669,
+      "max": 103617,
+      "mean": 74892.43520782396
+    },
+    "first_3_days": [
+      {
+        "event_date": "2025-01-01",
+        "n_rows": 43516,
+        "gmv_sum": 374066.46901643544
+      },
+      {
+        "event_date": "2025-01-02",
+        "n_rows": 52556,
+        "gmv_sum": 489227.99602247437
+      },
+      {
+        "event_date": "2025-01-03",
+        "n_rows": 53609,
+        "gmv_sum": 473332.47743750614
+      }
+    ],
+    "last_3_days": [
+      {
+        "event_date": "2026-02-11",
+        "n_rows": 95601,
+        "gmv_sum": 721942.4868534523
+      },
+      {
+        "event_date": "2026-02-12",
+        "n_rows": 94450,
+        "gmv_sum": 757756.4420580509
+      },
+      {
+        "event_date": "2026-02-13",
+        "n_rows": 91293,
+        "gmv_sum": 750104.8109436296
+      }
+    ],
+    "sparsity_note": "rows_per_user_mean = n_rows/n_users; dense fill would be n_users * n_calendar_span_days",
+    "rows_per_user_mean": 122.524024,
+    "dense_row_estimate": 102250000
+  },
+  "sample": {
+    "user_mod": 12,
+    "n_sample_users": 20866,
+    "n_sample_rows": 2563785,
+    "cutoff": "2026-01-14",
+    "target_window": [
+      "2026-01-15",
+      "2026-02-13"
+    ],
+    "naive_window": [
+      "2025-12-16",
+      "2026-01-14"
+    ],
+    "hist_gmv_positive_q50": 482.92914686542963,
+    "hist_gmv_positive_q90": 2873.2210963709235,
+    "y_zero_share": 0.46266653886705644,
+    "y_mean": 83.80591128798072,
+    "y_median": 7.490675068771515,
+    "y_p90": 210.629630414928,
+    "y_p99": 1016.7949320381127,
+    "y_positive": {
+      "n": 11212,
+      "mean": 155.96629904878753,
+      "median": 62.69652174179491,
+      "p90": 356.0574120148474,
+      "p99": 1405.8787430682653
+    },
+    "naive_metrics": {
+      "scope": "hash sample, not full 250k",
+      "rmsle": 2.1967941272466263,
+      "mae_log1p": 1.446952161916561,
+      "zero_pred_share": 0.4340074762771974,
+      "mean_pred": 100.25538478506662,
+      "mean_true": 83.80591128798072
+    },
+    "channel_gmv_hist": {
+      "gmv_search_share": 0.9281121791779293,
+      "gmv_cat_share": 0.07188782082207062,
+      "hist_gmv_sum": 20969481.0896023
+    },
+    "slices": {
+      "recency_bucket": [
+        {
+          "slice": "0_7",
+          "n": 17212,
+          "share": 0.8249,
+          "y_zero_share": 0.4084,
+          "mean_y": 95.7532,
+          "median_y": 15.0842,
+          "mean_pred": 116.2908,
+          "zero_pred_share": 0.3686,
+          "rmsle": 2.2116
+        },
+        {
+          "slice": "8_30",
+          "n": 3654,
+          "share": 0.1751,
+          "y_zero_share": 0.7184,
+          "mean_y": 27.529,
+          "median_y": 0.0,
+          "mean_pred": 24.7211,
+          "zero_pred_share": 0.7422,
+          "rmsle": 2.1255
+        }
+      ],
+      "hist_gmv_bucket": [
+        {
+          "slice": "high",
+          "n": 1800,
+          "share": 0.0863,
+          "y_zero_share": 0.0733,
+          "mean_y": 402.1126,
+          "median_y": 206.1068,
+          "mean_pred": 522.0167,
+          "zero_pred_share": 0.0533,
+          "rmsle": 1.9989
+        },
+        {
+          "slice": "low",
+          "n": 9001,
+          "share": 0.4314,
+          "y_zero_share": 0.5792,
+          "mean_y": 28.9331,
+          "median_y": 0.0,
+          "mean_pred": 23.5456,
+          "zero_pred_share": 0.5302,
+          "rmsle": 2.2964
+        },
+        {
+          "slice": "mid",
+          "n": 7200,
+          "share": 0.3451,
+          "y_zero_share": 0.2346,
+          "mean_y": 104.3775,
+          "median_y": 43.8988,
+          "mean_pred": 130.6062,
+          "zero_pred_share": 0.1837,
+          "rmsle": 2.4454
+        },
+        {
+          "slice": "zero",
+          "n": 2865,
+          "share": 0.1373,
+          "y_zero_share": 0.9145,
+          "mean_y": 4.519,
+          "median_y": 0.0,
+          "mean_pred": 0.0,
+          "zero_pred_share": 1.0,
+          "rmsle": 1.0207
+        }
+      ],
+      "activity_days_bucket": [
+        {
+          "slice": "1_5",
+          "n": 198,
+          "share": 0.0095,
+          "y_zero_share": 0.8687,
+          "mean_y": 6.4928,
+          "median_y": 0.0,
+          "mean_pred": 9.1166,
+          "zero_pred_share": 0.9141,
+          "rmsle": 1.48
+        },
+        {
+          "slice": "21_60",
+          "n": 5296,
+          "share": 0.2538,
+          "y_zero_share": 0.6839,
+          "mean_y": 30.0511,
+          "median_y": 0.0,
+          "mean_pred": 32.366,
+          "zero_pred_share": 0.6596,
+          "rmsle": 2.1855
+        },
+        {
+          "slice": "61_plus",
+          "n": 13602,
+          "share": 0.6519,
+          "y_zero_share": 0.3236,
+          "mean_y": 115.1645,
+          "median_y": 27.611,
+          "mean_pred": 138.8926,
+          "zero_pred_share": 0.289,
+          "rmsle": 2.2611
+        },
+        {
+          "slice": "6_20",
+          "n": 1770,
+          "share": 0.0848,
+          "y_zero_share": 0.8243,
+          "mean_y": 12.3113,
+          "median_y": 0.0,
+          "mean_pred": 16.6643,
+          "zero_pred_share": 0.8198,
+          "rmsle": 1.7509
+        }
+      ],
+      "channel_mix": [
+        {
+          "slice": "both",
+          "n": 19109,
+          "share": 0.9158,
+          "y_zero_share": 0.4347,
+          "mean_y": 89.8529,
+          "median_y": 11.4694,
+          "mean_pred": 107.3443,
+          "zero_pred_share": 0.4042,
+          "rmsle": 2.2193
+        },
+        {
+          "slice": "cat_only",
+          "n": 23,
+          "share": 0.0011,
+          "y_zero_share": 0.7826,
+          "mean_y": 42.2333,
+          "median_y": 0.0,
+          "mean_pred": 22.9109,
+          "zero_pred_share": 0.6957,
+          "rmsle": 1.8981
+        },
+        {
+          "slice": "neither",
+          "n": 42,
+          "share": 0.002,
+          "y_zero_share": 0.9762,
+          "mean_y": 0.1709,
+          "median_y": 0.0,
+          "mean_pred": 0.0,
+          "zero_pred_share": 1.0,
+          "rmsle": 0.3243
+        },
+        {
+          "slice": "search_only",
+          "n": 1692,
+          "share": 0.0811,
+          "y_zero_share": 0.7618,
+          "mean_y": 18.1538,
+          "median_y": 0.0,
+          "mean_pred": 23.7345,
+          "zero_pred_share": 0.7535,
+          "rmsle": 1.9585
+        }
+      ]
+    }
+  }
+}

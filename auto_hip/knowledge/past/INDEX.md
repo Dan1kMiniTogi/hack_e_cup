@@ -1,0 +1,59 @@
+# INDEX — scorecard гипотез
+
+**Champion: H45** `blend_lgb_hgb` · primary **1.696101** · holdout **1.74135**. Runner-up H31 LGB.
+
+Синтез линий и cemetery: [`SYNTHESIS.md`](SYNTHESIS.md). Отчёты: [`archive/`](archive/). Аудит H45: [`../analytics/results/004_h45_debug.md`](../analytics/results/004_h45_debug.md).
+
+Почти весь выигрыш — H04 (−0.487 vs naive) и две головы H05 (−0.009). H05→H45: −0.003 суммарно. Refine деревьев на `H26_COLS` исчерпан.
+
+| id | status | type | primary metrics | vs champion | note |
+|----|--------|------|-----------------|-------------|------|
+| H00 | control | naive | rmsle 2.195 | — | last-30d GMV, full 250k |
+| H01 | ⚠️ | refine | rmsle 2.037 | vs H00 better both | c=0.4, не champion |
+| H02 | ❌ | refine | rmsle 2.187 | хуже H05 | naive high-scale |
+| H03 | ❌ | pivot | rmsle 2.070 | хуже H04 | hurdle |
+| H04 | ✅ | pivot | rmsle 1.708 | vs H00 holdout 1.746 vs 2.214 | HGB log1p |
+| H05 | ✅ | explore | rmsle 1.699 | vs H04 both better | channel_sum |
+| H06 | ❌ | explore | rmsle 1.707 | хуже H05 | HGB+gaps |
+| H07 | ✅ | refine | rmsle 1.6987 | vs H05 both better | channel+gaps |
+| H08 | ❌ | explore | rmsle 1.714 | хуже H05 | MLP CPU |
+| H09 | ❌ | refine | rmsle 1.705 | хуже H07 | c=1.05 |
+| H10 | ❌ | pivot | rmsle 1.699 | = H07 | alpha=1 |
+| H11 | ✅ | explore | rmsle 1.6981 | vs H07 both better | ratios |
+| H12 | ⚠️ | pivot | rmsle 1.690 | holdout 1.782 worse | zero-weight |
+| H13 | ✅ | explore | rmsle 1.6976 | vs H11 both better | deeper |
+| H14 | ❌ | refine | rmsle 1.709 | хуже H11 | bucket c |
+| H15 | ✅ | refine | rmsle 1.6975 | vs H13 both better | L2 |
+| H16 | ❌ | pivot | rmsle 1.899 | хуже H13 | quantile 0.6 |
+| H17 | ✅ | explore | rmsle 1.6970 | vs H15 both better | order recency |
+| H18 | ❌ | pivot | rmsle 2.527 | хуже H15 | poisson |
+| H19 | ✅ | refine | rmsle 1.6967 | vs H17 both better | more iter |
+| H20 | ❌ | explore | rmsle 1.6974 | хуже H17 primary | ord_lag |
+| H21 | ❌ | pivot | rmsle 1.806 | хуже H19 | abs loss |
+| H22 | ❌ | explore | rmsle 1.6974 | holdout better, primary worse | extra cutoff |
+| H23 | ❌ | refine | rmsle 1.6969 | holdout better | leaf 20 |
+| H24 | ❌ | explore | rmsle 1.6969 | holdout better | monotonic GMV |
+| H25 | ✅ | explore | rmsle 1.6966 | vs H19 both | decay GMV |
+| H26 | ✅ | pivot | rmsle 1.6965 | vs H19 both | 3-seed HGB |
+| H27 | ❌ | explore | rmsle 1.6966 | хуже H26 | ens+decay |
+| H28 | ❌ | pivot | rmsle 1.6965 | хуже H26 | depth 7 |
+| H29 | ❌ | refine | rmsle 1.69963 | хуже H31 | zero hist guard |
+| H30 | ❌ | refine | rmsle 1.69650 | хуже H31 | leaf 50 |
+| H31 | ✅ | pivot | rmsle 1.69611 | vs H26 both better | LightGBM 3-seed |
+| H32 | ❌ | pivot | rmsle 1.69627 | хуже H31 | CatBoost |
+| H33 | ❌ | pivot | rmsle 1.70543 | хуже H31 | single-head total y |
+| H34 | ❌ | explore | rmsle 1.69703 | хуже H26 primary | weekend share |
+| H35 | ❌ | explore | rmsle 1.69660 | хуже H31 | last-K events |
+| H36 | ❌ | explore | rmsle 1.69877 | хуже H31 | mid residual |
+| H37 | ❌ | pivot | rmsle 1.70473 | хуже H31 | LGB total y |
+| H38 | ❌ | pivot | rmsle 2.488 | хуже H31 | Tweedie |
+| H39 | ❌ | explore | rmsle 1.69877 | хуже H31 | MoE hist_gmv |
+| H40 | ❌ | pivot | rmsle 1.69649 | хуже H31 | zero-snap τ |
+| H41 | ⚠️ | explore | rmsle 1.696112 | primary ≈ H31, holdout worse | RFM TE |
+| H42 | ❌ | explore | rmsle 1.69653 | хуже H31, holdout better | burstiness |
+| H43 | ❌ | explore | rmsle 1.69681 | хуже H31 | time weights |
+| H44 | ❌ | refine | rmsle 1.70670 | хуже H31 | isotonic log |
+| H45 | ✅ | explore | rmsle 1.696101 | vs H31 both better | **champion** LGB+HGB mix |
+| H46 | ❌ | pivot | rmsle 1.69745 | хуже H31 | XGBoost |
+
+Легенда status: ✅ принята · ⚠️ кандидат / нужен holdout · ❌ отклонена. Отчёт Hx → [`archive/`](archive/) (`h01_global_scale.md` … `h46_xgboost.md`).

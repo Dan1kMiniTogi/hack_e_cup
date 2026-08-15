@@ -1,0 +1,60 @@
+# SoT порогов и настроек цикла. Определения метрик — в knowledge/METRICS.md.
+# Агент не дублирует числа в AGENTS.md — только ссылается сюда.
+
+project_name: e-cup-2026-search-ltv
+
+# Walk-forward 30d, как горизонт теста 2026-02-14..2026-03-15.
+# Таргет = сумма gmv по user_id в окне после cutoff; дни без строк = 0, без densify.
+primary_split: local_val_cutoff_2026-01-14
+holdout_splits:
+  - holdout_cutoff_2025-12-15
+# Все клиенты соревнования должны получить predict (в т.ч. с нулевым окном).
+validation_min_labeled: 250000
+
+# Параллельные гипотезы за цикл. 30M строк — не раздувать параллелизм.
+workers: 2
+
+# Сколько полных циклов (future→test→past→new future) за одну сессию агента
+max_cycles: 15
+
+metrics:
+  primary: ["rmsle"]
+  higher_is_better: []
+  lower_is_better: ["rmsle"]
+  secondary: ["mae_log1p", "zero_pred_share", "mean_pred", "mean_true"]
+  slice_dims:
+    - recency_bucket
+    - hist_gmv_bucket
+    - activity_days_bucket
+    - channel_mix
+  # Пользователь в «ошибке» для persist/fixed/regress, если squared log-error ≥ этот квантиль по champion.
+  error_sq_log_quantile: 0.9
+
+acceptance:
+  require_holdout_for_promote: true
+  no_regression_vs_champion: true
+  constraints:
+    - non_negative_preds
+    - all_users_predicted
+    - no_dense_zero_fill
+
+baselines:
+  control: naive_autoregressive
+champion: blend_lgb_hgb
+champion_run: h45_blend
+champion_arm: blend_lgb_hgb
+
+banned_lines:
+  - hurdle_zero_positive
+  - mlp_cpu_small
+  - poisson_identity
+
+preflight:
+  reminders:
+    - Данные только data/train.parquet; не читать файл целиком в чат/контекст.
+    - Не материализовать dense calendar (нули по всем дням) — ряд разреженный.
+    - Метрика RMSLE с log1p; predict = max(0, pred); формат сабмита user_id,predict на всех user_id.
+    - Код и артефакты прогонов — auto_hip/workspace/; knowledge/ — только отчёты и очередь.
+    - Primary: cutoff 2026-01-14, таргет 2026-01-15..2026-02-13. Holdout: cutoff 2025-12-15.
+    - Public/private лидерборда 20/80; офлайн RMSLE ≠ гарантия места на LB.
+    - Baseline: data/baseline-seacrh-ltv.ipynb и data/sample_submit.csv; naive = last-30d GMV.

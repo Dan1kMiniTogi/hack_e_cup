@@ -1,0 +1,29 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+*.log
+.DS_Store
+.cache/
+*.swp
+
+# Датасет соревнования (лимит GitHub 100 МБ)
+data/*.parquet
+
+# Тяжёлые артефакты прогонов (если появятся локально)
+**/predictions_*.jsonl
+**/*.npz
+**/embeddings.npz
+
+# auto_hip workspace runs / модели / кэш агрегатов
+auto_hip/workspace/runs/
+auto_hip/workspace/**/*.pkl
+auto_hip/workspace/**/*.joblib
+auto_hip/workspace/**/*.parquet
+auto_hip/workspace/**/*.feather
+auto_hip/workspace/**/*.lgb
+auto_hip/workspace/**/*.cbm
+auto_hip/workspace/**/*.bin
+auto_hip/workspace/**/__pycache__/
