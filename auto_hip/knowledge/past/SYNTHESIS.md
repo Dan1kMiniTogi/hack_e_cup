@@ -1,8 +1,8 @@
-# SYNTHESIS — H00–H61
+# SYNTHESIS — H00–H67
 
-Champion: **H59** `lgb_ipi_chlag`, primary RMSLE **1.691937**, holdout **1.739946**. Предыдущий H52 1.692618 / 1.740169.
+Champion: **H65** `lgb_h59_reg`, primary RMSLE **1.691493**, holdout **1.739622**. Предыдущий H59 1.691937 / 1.739946.
 
-Scorecard — [`INDEX.md`](INDEX.md). Линии — [`lines/`](lines/). Активное окно (~15 отчётов) — `h47_*.md` … `h61_*.md` в корне. Cemetery — [`lines/cemetery.md`](lines/cemetery.md).
+Scorecard — [`INDEX.md`](INDEX.md). Линии — [`lines/`](lines/). Активное окно (~15 отчётов) — `h51_*.md` … `h67_*.md` в корне. Cemetery — [`lines/cemetery.md`](lines/cemetery.md).
 
 ## Что реально сдвинуло метрику
 
@@ -14,6 +14,9 @@ Scorecard — [`INDEX.md`](INDEX.md). Линии — [`lines/`](lines/). Акт�
 | H45 → H48 | **−0.0025** | BTYD RFM/AOV как фичи. |
 | H48 → H52 | **−0.0010** | IPI между днями заказа. |
 | H52 → H59 | **−0.0007** | IPI + disjoint 30d лаги search/cat/to_ord. |
+| H59 → H65 | **−0.00044** | Регуляризация (min_data_in_leaf 60, feature_fraction 0.8, L2 3.0) на широком признаковом стеке. |
+
+mean_pred ≈ 45 при mean_true 84 / 101 — не баг для RMSLE: post-hoc scale (H60) и `log1p(y+ε)` (H61) ломают метрику.
 
 mean_pred ≈ 45 при mean_true 84 / 101 — не баг для RMSLE: post-hoc scale (H60) и `log1p(y+ε)` (H61) ломают метрику.
 

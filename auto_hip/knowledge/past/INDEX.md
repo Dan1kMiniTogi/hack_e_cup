@@ -1,10 +1,10 @@
 # INDEX — scorecard гипотез
 
-**Champion: H59** `lgb_ipi_chlag` · primary **1.691937** · holdout **1.739946**. Предыдущий H52 IPI 1.692618 / 1.740169.
+**Champion: H65** `lgb_h59_reg` · primary **1.691493** · holdout **1.739622**. Предыдущий H59 IPI+chlag 1.691937 / 1.739946.
 
-Синтез: [`SYNTHESIS.md`](SYNTHESIS.md). Линии: [`lines/`](lines/). Активные отчёты (~15): `h47_*.md`…`h61_*.md` в корне. Аудит H45: [`../analytics/results/004_h45_debug.md`](../analytics/results/004_h45_debug.md).
+Синтез: [`SYNTHESIS.md`](SYNTHESIS.md). Линии: [`lines/`](lines/). Активные отчёты (~15): `h51_*.md`…`h67_*.md` в корне. Аудит H45: [`../analytics/results/004_h45_debug.md`](../analytics/results/004_h45_debug.md).
 
-Почти весь выигрыш — H04 (−0.487) и две головы H05 (−0.009). H48 BTYD −0.0025 vs H45; H52 IPI −0.0010 vs H48; H59 IPI+chlag −0.0007 vs H52.
+Почти весь выигрыш — H04 (−0.487) и две головы H05 (−0.009). H48 BTYD −0.0025 vs H45; H52 IPI −0.0010 vs H48; H59 IPI+chlag −0.0007 vs H52; H65 reg −0.00044 vs H59.
 
 | id | status | type | primary metrics | vs champion | note |
 |----|--------|------|-----------------|-------------|------|
@@ -67,8 +67,14 @@
 | H56 | ❌ | pivot | rmsle 1.694647 | хуже H48 | якорь 2025-11-08 |
 | H57 | ✅ | refine | rmsle 1.693444 | vs H48 both, < H52 | ord days 30/90 |
 | H58 | ⚠️ | explore | rmsle 1.692532 | holdout 1.740267 worse | IPI+calendar |
-| H59 | ✅ | explore | rmsle 1.691937 | vs H52 both better | **champion** IPI+chlag |
+| H59 | ✅ | explore | rmsle 1.691937 | vs H52 both better | IPI+chlag |
 | H60 | ❌ | refine | rmsle 1.702081 | хуже H52 | bucket c на IPI |
 | H61 | ❌ | refine | rmsle 1.729107 | хуже H52 | log1p(y+1) |
+| H62 | ❌ | explore | rmsle 1.692303 | хуже H59 both | H59 + nested lags |
+| H63 | ⚠️ | refine | rmsle 1.692294 | holdout better, primary worse | H59 + rord |
+| H64 | ❌ | explore | rmsle 1.692401 | хуже H59 both | H59 + cart conv |
+| H65 | ✅ | refine | rmsle 1.691493 | vs H59 both better | **champion** H59 reg |
+| H66 | ❌ | explore | rmsle 1.692314 | хуже H59 both | H59 + joint lags/rord |
+| H67 | ✅ | pivot | rmsle 1.691867 | vs H59 both better | H59+HGB blend |
 
 Легенда status: ✅ принята · ⚠️ кандидат / нужен holdout · ❌ отклонена. Полный отчёт Hx → корень `past/` (окно ~15) или свёртка в [`lines/`](lines/).

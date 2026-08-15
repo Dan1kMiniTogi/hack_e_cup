@@ -12,12 +12,19 @@ from typing import Any
 
 import numpy as np
 import polars as pl
-from sklearn.ensemble import HistGradientBoostingClassifier, HistGradientBoostingRegressor
+from sklearn.ensemble import (
+    HistGradientBoostingClassifier,
+    HistGradientBoostingRegressor,
+)
 
 from ltv_metrics import rmsle
 
-HGB_REG = dict(max_depth=6, max_iter=120, learning_rate=0.08, min_samples_leaf=40, random_state=42)
-HGB_CLF = dict(max_depth=5, max_iter=80, learning_rate=0.08, min_samples_leaf=40, random_state=42)
+HGB_REG = dict(
+    max_depth=6, max_iter=120, learning_rate=0.08, min_samples_leaf=40, random_state=42
+)
+HGB_CLF = dict(
+    max_depth=5, max_iter=80, learning_rate=0.08, min_samples_leaf=40, random_state=42
+)
 
 BASE_FEATURES = [
     "gmv_sum_7d",
@@ -62,6 +69,12 @@ RATIO_FEATURES = [
     "search_gmv_share_30d",
     "gmv_per_ord_90d",
 ]
+CART_RATIO_FEATURES = [
+    "cart_to_ord_ratio_7d",
+    "cart_to_ord_ratio_30d",
+    "abandoned_cart_7d",
+    "abandoned_cart_30d",
+]
 DECAY_FEATURES = ["decay_gmv30"]
 ORDER_FEATURES = ["recency_order_days"]
 WEEKDAY_FEATURES = ["weekend_gmv_share", "weekend_day_share"]
@@ -104,7 +117,13 @@ BTYD_FEATURES = [
     "btyd_e_gmv",
 ]
 H26_COLS = BASE_FEATURES + GAP_FEATURES + RATIO_FEATURES + ORDER_FEATURES
-DEEPER_L2 = dict(max_depth=8, max_iter=220, learning_rate=0.05, min_samples_leaf=30, l2_regularization=1.0)
+DEEPER_L2 = dict(
+    max_depth=8,
+    max_iter=220,
+    learning_rate=0.05,
+    min_samples_leaf=30,
+    l2_regularization=1.0,
+)
 H26_HGB = {**DEEPER_L2, "max_iter": 320, "learning_rate": 0.04}
 LGB_PARAMS = {
     "objective": "regression",
@@ -116,7 +135,7 @@ LGB_PARAMS = {
     "lambda_l2": 1.0,
     "verbosity": -1,
     "feature_pre_filter": False,
-    "num_threads": 4,
+    "num_threads": 10,
 }
 LGB_ROUNDS = 320
 
@@ -138,13 +157,33 @@ def with_derived(df: pl.DataFrame) -> pl.DataFrame:
         intensity_90d=pl.col("gmv_sum_90d") / (pl.col("active_days_90d") + 1.0),
         ord_rate_30d=pl.col("to_ord_sum_30d") / (pl.col("searches_sum_30d") + 1.0),
         cart_rate_30d=pl.col("to_cart_sum_30d") / (pl.col("searches_sum_30d") + 1.0),
-        search_gmv_share_30d=pl.col("gmv_search_sum_30d") / (pl.col("gmv_sum_30d") + 1.0),
+        search_gmv_share_30d=pl.col("gmv_search_sum_30d")
+        / (pl.col("gmv_sum_30d") + 1.0),
         gmv_per_ord_90d=pl.col("gmv_sum_90d") / (pl.col("to_ord_sum_90d") + 1.0),
-        decay_gmv30=pl.col("gmv_sum_30d") / (pl.col("recency_days").fill_null(9999) + 1.0),
+        decay_gmv30=pl.col("gmv_sum_30d")
+        / (pl.col("recency_days").fill_null(9999) + 1.0),
     )
     if "recency_order_days" in df.columns:
         out = out.with_columns(
-            ord_lag=pl.col("recency_order_days").fill_null(9999) - pl.col("recency_days").fill_null(9999)
+            ord_lag=pl.col("recency_order_days").fill_null(9999)
+            - pl.col("recency_days").fill_null(9999)
+        )
+    if "cart_to_ord_ratio_30d" not in out.columns:
+        out = out.with_columns(
+            cart_to_ord_ratio_7d=pl.col("to_cart_sum_7d")
+            / (pl.col("to_ord_sum_7d") + 1.0),
+            cart_to_ord_ratio_30d=pl.col("to_cart_sum_30d")
+            / (pl.col("to_ord_sum_30d") + 1.0),
+            abandoned_cart_7d=pl.when(
+                pl.col("to_cart_sum_7d") > pl.col("to_ord_sum_7d")
+            )
+            .then(pl.col("to_cart_sum_7d") - pl.col("to_ord_sum_7d"))
+            .otherwise(0.0),
+            abandoned_cart_30d=pl.when(
+                pl.col("to_cart_sum_30d") > pl.col("to_ord_sum_30d")
+            )
+            .then(pl.col("to_cart_sum_30d") - pl.col("to_ord_sum_30d"))
+            .otherwise(0.0),
         )
     return out
 
@@ -152,7 +191,16 @@ def with_derived(df: pl.DataFrame) -> pl.DataFrame:
 def _X(df: pl.DataFrame, cols: list[str]) -> np.ndarray:
     """Numeric matrix; null recency filled with large value (never-seen)."""
     work = df
-    if any(c in RATIO_FEATURES or c in DECAY_FEATURES or c == "ord_lag" for c in cols) and "intensity_30d" not in df.columns:
+    if (
+        any(
+            c in RATIO_FEATURES
+            or c in CART_RATIO_FEATURES
+            or c in DECAY_FEATURES
+            or c == "ord_lag"
+            for c in cols
+        )
+        and "intensity_30d" not in df.columns
+    ):
         work = with_derived(work)
     work = work.with_columns(pl.col("recency_days").fill_null(9999))
     if "recency_order_days" in work.columns:
@@ -195,7 +243,9 @@ def fit_scale_high(train_df: pl.DataFrame, q50: float, q90: float) -> ArmModel:
         s = rmsle(y, c * naive)
         if s < best:
             best, best_c = s, float(c)
-    return ArmModel("scale_high", {"c_high": best_c, "q90": q90, "inner_rmsle_high": best})
+    return ArmModel(
+        "scale_high", {"c_high": best_c, "q90": q90, "inner_rmsle_high": best}
+    )
 
 
 def fit_hgb(
@@ -256,7 +306,9 @@ def _best_alpha(y: np.ndarray, pred_m: np.ndarray, pred_n: np.ndarray) -> float:
     return best_a
 
 
-def _fit_channel(train_df: pl.DataFrame, cols: list[str], **hgb_extra) -> dict[str, Any]:
+def _fit_channel(
+    train_df: pl.DataFrame, cols: list[str], **hgb_extra
+) -> dict[str, Any]:
     """Two log1p HGB heads for search and catalog."""
     return {
         "reg_s": fit_hgb(train_df, cols, "y_search", **hgb_extra),
@@ -310,11 +362,19 @@ def _fit_lgb_head(
         "feature_fraction_seed": seed,
         "bagging_seed": seed,
     }
-    dtrain = lgb.Dataset(_X(train_df, cols), label=y, weight=weight, feature_name=cols, free_raw_data=False)
+    dtrain = lgb.Dataset(
+        _X(train_df, cols),
+        label=y,
+        weight=weight,
+        feature_name=cols,
+        free_raw_data=False,
+    )
     return lgb.train(params, dtrain, num_boost_round=num_rounds or LGB_ROUNDS)
 
 
-def _fit_lgb_channel(train_df: pl.DataFrame, cols: list[str], seed: int, **head_kw) -> dict[str, Any]:
+def _fit_lgb_channel(
+    train_df: pl.DataFrame, cols: list[str], seed: int, **head_kw
+) -> dict[str, Any]:
     """Two LightGBM log1p heads for search and catalog."""
     return {
         "reg_s": _fit_lgb_head(train_df, cols, "y_search", seed, **head_kw),
@@ -330,7 +390,9 @@ def _pred_two_log_heads(reg_s, reg_c, xs: np.ndarray) -> np.ndarray:
     return _clip(ps) + _clip(pc)
 
 
-def _pred_two_log_heads_eps(reg_s, reg_c, xs: np.ndarray, eps: float = 1.0) -> np.ndarray:
+def _pred_two_log_heads_eps(
+    reg_s, reg_c, xs: np.ndarray, eps: float = 1.0
+) -> np.ndarray:
     """Inverse of log1p(y+eps): clip(expm1(p) - eps) then sum heads.
 
     Args:
@@ -440,7 +502,9 @@ def fit_hurdle(train_df: pl.DataFrame, cols: list[str]) -> ArmModel:
     return ArmModel("hurdle", {"clf": clf, "reg": reg, "cols": cols})
 
 
-def _prepare_btyd(df: pl.DataFrame, params: dict[str, float] | None = None) -> tuple[pl.DataFrame, dict[str, float]]:
+def _prepare_btyd(
+    df: pl.DataFrame, params: dict[str, float] | None = None
+) -> tuple[pl.DataFrame, dict[str, float]]:
     """Attach BTYD RFM and BG-NBD-like derived columns.
 
     Args:
@@ -457,7 +521,9 @@ def _prepare_btyd(df: pl.DataFrame, params: dict[str, float] | None = None) -> t
 
     work = attach_btyd(df)
     if params is None:
-        params = bgnbd_moments(work["btyd_frequency"].to_numpy(), work["btyd_T"].to_numpy())
+        params = bgnbd_moments(
+            work["btyd_frequency"].to_numpy(), work["btyd_T"].to_numpy()
+        )
     return add_bgnbd_derived(work, params), params
 
 
@@ -511,7 +577,10 @@ def fit_arm(name: str, train_df: pl.DataFrame, q50: float, q90: float) -> ArmMod
     if name == "hurdle":
         return fit_hurdle(train_df, BASE_FEATURES)
     if name == "hgb_log1p":
-        return ArmModel("hgb_log1p", {"reg": fit_hgb(train_df, BASE_FEATURES), "cols": BASE_FEATURES})
+        return ArmModel(
+            "hgb_log1p",
+            {"reg": fit_hgb(train_df, BASE_FEATURES), "cols": BASE_FEATURES},
+        )
     if name == "channel_sum":
         return ArmModel("channel_sum", _fit_channel(train_df, BASE_FEATURES))
     if name == "channel_gaps":
@@ -552,23 +621,39 @@ def fit_arm(name: str, train_df: pl.DataFrame, q50: float, q90: float) -> ArmMod
         kw = {**DEEPER_L2, "max_iter": 320, "learning_rate": 0.04}
         return ArmModel("channel_sum", _fit_channel(train_df, cols, hgb_kw=kw))
     if name == "channel_order_lag":
-        cols = BASE_FEATURES + GAP_FEATURES + RATIO_FEATURES + ORDER_FEATURES + ["ord_lag"]
+        cols = (
+            BASE_FEATURES + GAP_FEATURES + RATIO_FEATURES + ORDER_FEATURES + ["ord_lag"]
+        )
         return ArmModel("channel_sum", _fit_channel(train_df, cols, hgb_kw=DEEPER_L2))
     if name == "channel_order_leaf":
         cols = BASE_FEATURES + GAP_FEATURES + RATIO_FEATURES + ORDER_FEATURES
-        kw = {**DEEPER_L2, "max_iter": 320, "learning_rate": 0.04, "min_samples_leaf": 20}
+        kw = {
+            **DEEPER_L2,
+            "max_iter": 320,
+            "learning_rate": 0.04,
+            "min_samples_leaf": 20,
+        }
         return ArmModel("channel_sum", _fit_channel(train_df, cols, hgb_kw=kw))
     if name == "channel_mono":
         cols = BASE_FEATURES + GAP_FEATURES + RATIO_FEATURES + ORDER_FEATURES
         cst = [0] * len(cols)
         for i, c in enumerate(cols):
-            if c.startswith("gmv_sum_") or c in ("hist_gmv", "gmv_search_sum_30d", "gmv_cat_sum_30d"):
+            if c.startswith("gmv_sum_") or c in (
+                "hist_gmv",
+                "gmv_search_sum_30d",
+                "gmv_cat_sum_30d",
+            ):
                 cst[i] = 1
         kw = {**DEEPER_L2, "max_iter": 320, "learning_rate": 0.04, "monotonic_cst": cst}
         return ArmModel("channel_sum", _fit_channel(train_df, cols, hgb_kw=kw))
     if name == "channel_abs":
         cols = BASE_FEATURES + GAP_FEATURES + RATIO_FEATURES + ORDER_FEATURES
-        kw = {**DEEPER_L2, "max_iter": 320, "learning_rate": 0.04, "loss": "absolute_error"}
+        kw = {
+            **DEEPER_L2,
+            "max_iter": 320,
+            "learning_rate": 0.04,
+            "loss": "absolute_error",
+        }
         return ArmModel("channel_sum", _fit_channel(train_df, cols, hgb_kw=kw))
     if name == "channel_more_data":
         from ltv_data import load_named
@@ -579,7 +664,13 @@ def fit_arm(name: str, train_df: pl.DataFrame, q50: float, q90: float) -> ArmMod
         kw = {**DEEPER_L2, "max_iter": 320, "learning_rate": 0.04}
         return ArmModel("channel_sum", _fit_channel(train_df, cols, hgb_kw=kw))
     if name == "channel_decay":
-        cols = BASE_FEATURES + GAP_FEATURES + RATIO_FEATURES + ORDER_FEATURES + DECAY_FEATURES
+        cols = (
+            BASE_FEATURES
+            + GAP_FEATURES
+            + RATIO_FEATURES
+            + ORDER_FEATURES
+            + DECAY_FEATURES
+        )
         kw = {**DEEPER_L2, "max_iter": 320, "learning_rate": 0.04}
         return ArmModel("channel_sum", _fit_channel(train_df, cols, hgb_kw=kw))
     if name == "channel_ens":
@@ -604,21 +695,34 @@ def fit_arm(name: str, train_df: pl.DataFrame, q50: float, q90: float) -> ArmMod
     if name == "lgb_btyd_cal":
         from ltv_data import CALENDAR_FEATURES, attach_calendar
 
-        return _fit_btyd_lgb(train_df, CALENDAR_FEATURES, attach_calendar, {"need_calendar": True})
+        return _fit_btyd_lgb(
+            train_df, CALENDAR_FEATURES, attach_calendar, {"need_calendar": True}
+        )
     if name == "lgb_btyd_lags":
         from ltv_data import NESTED_LAG_FEATURES, add_nested_gmv_lags
 
-        return _fit_btyd_lgb(train_df, NESTED_LAG_FEATURES, add_nested_gmv_lags, {"need_lags": True})
+        return _fit_btyd_lgb(
+            train_df, NESTED_LAG_FEATURES, add_nested_gmv_lags, {"need_lags": True}
+        )
     if name == "lgb_btyd_chbtyd":
         from ltv_data import CHANNEL_BTYD_FEATURES, attach_channel_btyd
 
-        return _fit_btyd_lgb(train_df, CHANNEL_BTYD_FEATURES, attach_channel_btyd, {"need_ch_btyd": True})
+        return _fit_btyd_lgb(
+            train_df, CHANNEL_BTYD_FEATURES, attach_channel_btyd, {"need_ch_btyd": True}
+        )
     if name == "lgb_btyd_ipi":
         from ltv_data import ORDER_IPI_FEATURES, attach_order_ipi
 
-        return _fit_btyd_lgb(train_df, ORDER_IPI_FEATURES, attach_order_ipi, {"need_ipi": True})
+        return _fit_btyd_lgb(
+            train_df, ORDER_IPI_FEATURES, attach_order_ipi, {"need_ipi": True}
+        )
     if name == "lgb_ipi_cal":
-        from ltv_data import CALENDAR_FEATURES, ORDER_IPI_FEATURES, attach_calendar, attach_order_ipi
+        from ltv_data import (
+            CALENDAR_FEATURES,
+            ORDER_IPI_FEATURES,
+            attach_calendar,
+            attach_order_ipi,
+        )
 
         def _prep(d):
             return attach_calendar(attach_order_ipi(d))
@@ -630,7 +734,12 @@ def fit_arm(name: str, train_df: pl.DataFrame, q50: float, q90: float) -> ArmMod
             {"need_ipi": True, "need_calendar": True},
         )
     if name == "lgb_ipi_chlag":
-        from ltv_data import CHANNEL_LAG_FEATURES, ORDER_IPI_FEATURES, attach_channel_lags, attach_order_ipi
+        from ltv_data import (
+            CHANNEL_LAG_FEATURES,
+            ORDER_IPI_FEATURES,
+            attach_channel_lags,
+            attach_order_ipi,
+        )
 
         def _prep(d):
             return attach_channel_lags(attach_order_ipi(d))
@@ -641,10 +750,153 @@ def fit_arm(name: str, train_df: pl.DataFrame, q50: float, q90: float) -> ArmMod
             _prep,
             {"need_ipi": True, "need_ch_lags": True},
         )
+    if name == "lgb_h59_nested_lags":
+        from ltv_data import (
+            CHANNEL_LAG_FEATURES,
+            NESTED_LAG_FEATURES,
+            ORDER_IPI_FEATURES,
+            add_nested_gmv_lags,
+            attach_channel_lags,
+            attach_order_ipi,
+        )
+
+        def _prep(d):
+            return add_nested_gmv_lags(attach_channel_lags(attach_order_ipi(d)))
+
+        return _fit_btyd_lgb(
+            train_df,
+            ORDER_IPI_FEATURES + CHANNEL_LAG_FEATURES + NESTED_LAG_FEATURES,
+            _prep,
+            {"need_ipi": True, "need_ch_lags": True, "need_lags": True},
+        )
+    if name == "lgb_h59_rord":
+        from ltv_data import (
+            CHANNEL_LAG_FEATURES,
+            ORDER_IPI_FEATURES,
+            RECENT_ORD_FEATURES,
+            attach_channel_lags,
+            attach_order_ipi,
+            attach_recent_ord,
+        )
+
+        def _prep(d):
+            return attach_recent_ord(attach_channel_lags(attach_order_ipi(d)))
+
+        return _fit_btyd_lgb(
+            train_df,
+            ORDER_IPI_FEATURES + CHANNEL_LAG_FEATURES + RECENT_ORD_FEATURES,
+            _prep,
+            {"need_ipi": True, "need_ch_lags": True, "need_rord": True},
+        )
+    if name == "lgb_h59_cart_conv":
+        from ltv_data import (
+            CHANNEL_LAG_FEATURES,
+            ORDER_IPI_FEATURES,
+            attach_channel_lags,
+            attach_order_ipi,
+        )
+
+        def _prep(d):
+            return with_derived(attach_channel_lags(attach_order_ipi(d)))
+
+        return _fit_btyd_lgb(
+            train_df,
+            ORDER_IPI_FEATURES + CHANNEL_LAG_FEATURES + CART_RATIO_FEATURES,
+            _prep,
+            {"need_ipi": True, "need_ch_lags": True},
+        )
+    if name == "lgb_h59_reg":
+        from ltv_data import (
+            CHANNEL_LAG_FEATURES,
+            ORDER_IPI_FEATURES,
+            attach_channel_lags,
+            attach_order_ipi,
+        )
+
+        def _prep(d):
+            return attach_channel_lags(attach_order_ipi(d))
+
+        work, params = _prepare_btyd(train_df)
+        work = _prep(work)
+        cols = H26_COLS + BTYD_FEATURES + ORDER_IPI_FEATURES + CHANNEL_LAG_FEATURES
+        extra_kw = {
+            "extra_params": {
+                "min_data_in_leaf": 60,
+                "feature_fraction": 0.8,
+                "lambda_l2": 3.0,
+            }
+        }
+        members = [
+            _fit_lgb_channel(work, cols, seed, **extra_kw) for seed in (42, 7, 99)
+        ]
+        return ArmModel(
+            "lgb_channel_ens",
+            {
+                "members": members,
+                "need_btyd": True,
+                "bgnbd": params,
+                "need_ipi": True,
+                "need_ch_lags": True,
+            },
+        )
+    if name == "lgb_h59_joint":
+        from ltv_data import (
+            CHANNEL_LAG_FEATURES,
+            ORDER_IPI_FEATURES,
+            RECENT_ORD_FEATURES,
+            add_nested_gmv_lags,
+            attach_channel_lags,
+            attach_order_ipi,
+            attach_recent_ord,
+        )
+
+        def _prep(d):
+            return add_nested_gmv_lags(
+                attach_recent_ord(attach_channel_lags(attach_order_ipi(d)))
+            )
+
+        selected_extra = ["ord_days_30d", "gmv_lag2_30", "gmv_lag3_30"]
+        return _fit_btyd_lgb(
+            train_df,
+            ORDER_IPI_FEATURES + CHANNEL_LAG_FEATURES + selected_extra,
+            _prep,
+            {
+                "need_ipi": True,
+                "need_ch_lags": True,
+                "need_rord": True,
+                "need_lags": True,
+            },
+        )
+    if name == "blend_h59_hgb":
+        from ltv_data import (
+            CHANNEL_LAG_FEATURES,
+            ORDER_IPI_FEATURES,
+            attach_channel_lags,
+            attach_order_ipi,
+        )
+
+        def _prep(d):
+            return attach_channel_lags(attach_order_ipi(d))
+
+        work, params = _prepare_btyd(train_df)
+        work = _prep(work)
+        cols = H26_COLS + BTYD_FEATURES + ORDER_IPI_FEATURES + CHANNEL_LAG_FEATURES
+        lgb_m = [_fit_lgb_channel(work, cols, seed) for seed in (42, 7, 99)]
+        hgb_m = []
+        for seed in (42, 7, 99):
+            hgb_m.append(
+                _fit_channel(work, cols, hgb_kw={**H26_HGB, "random_state": seed})
+            )
+        return ArmModel(
+            "blend_h59_hgb",
+            {"lgb": lgb_m, "hgb": hgb_m, "bgnbd": params, "cols": cols},
+        )
     if name == "lgb_ipi_bucket_c":
         from ltv_data import ORDER_IPI_FEATURES, attach_order_ipi
 
-        base = _fit_btyd_lgb(train_df, ORDER_IPI_FEATURES, attach_order_ipi, {"need_ipi": True})
+        base = _fit_btyd_lgb(
+            train_df, ORDER_IPI_FEATURES, attach_order_ipi, {"need_ipi": True}
+        )
         pred = predict_arm(base, train_df)
         y = train_df["y"].to_numpy()
         hist = train_df["hist_gmv"].to_numpy()
@@ -657,7 +909,11 @@ def fit_arm(name: str, train_df: pl.DataFrame, q50: float, q90: float) -> ArmMod
         grid = np.linspace(0.8, 1.2, 21)
         cs = {}
         for b, mask in buckets.items():
-            cs[b] = 1.0 if mask.sum() < 100 else float(np.clip(_best_c(y[mask], pred[mask], grid), 0.8, 1.2))
+            cs[b] = (
+                1.0
+                if mask.sum() < 100
+                else float(np.clip(_best_c(y[mask], pred[mask], grid), 0.8, 1.2))
+            )
         return ArmModel(
             "lgb_ipi_bucket_c",
             {**base.payload, "c_buckets": cs, "q50": q50, "q90": q90},
@@ -668,27 +924,48 @@ def fit_arm(name: str, train_df: pl.DataFrame, q50: float, q90: float) -> ArmMod
         work, params = _prepare_btyd(train_df)
         work = attach_order_ipi(work)
         cols = H26_COLS + BTYD_FEATURES + ORDER_IPI_FEATURES
-        members = [_fit_lgb_channel(work, cols, seed, y_transform="log1p_eps") for seed in (42, 7, 99)]
+        members = [
+            _fit_lgb_channel(work, cols, seed, y_transform="log1p_eps")
+            for seed in (42, 7, 99)
+        ]
         return ArmModel(
             "lgb_channel_ens",
-            {"members": members, "need_btyd": True, "bgnbd": params, "need_ipi": True, "log_eps": 1.0},
+            {
+                "members": members,
+                "need_btyd": True,
+                "bgnbd": params,
+                "need_ipi": True,
+                "log_eps": 1.0,
+            },
         )
     if name == "lgb_btyd_chlag":
         from ltv_data import CHANNEL_LAG_FEATURES, attach_channel_lags
 
-        return _fit_btyd_lgb(train_df, CHANNEL_LAG_FEATURES, attach_channel_lags, {"need_ch_lags": True})
+        return _fit_btyd_lgb(
+            train_df, CHANNEL_LAG_FEATURES, attach_channel_lags, {"need_ch_lags": True}
+        )
     if name == "blend_lgb_hgb_btyd":
         work, params = _prepare_btyd(train_df)
         cols = H26_COLS + BTYD_FEATURES
         lgb_m = [_fit_lgb_channel(work, cols, seed) for seed in (42, 7, 99)]
         hgb_m = []
         for seed in (42, 7, 99):
-            hgb_m.append(_fit_channel(work, cols, hgb_kw={**H26_HGB, "random_state": seed}))
-        return ArmModel("blend_lgb_hgb_btyd", {"lgb": lgb_m, "hgb": hgb_m, "bgnbd": params, "cols": cols})
+            hgb_m.append(
+                _fit_channel(work, cols, hgb_kw={**H26_HGB, "random_state": seed})
+            )
+        return ArmModel(
+            "blend_lgb_hgb_btyd",
+            {"lgb": lgb_m, "hgb": hgb_m, "bgnbd": params, "cols": cols},
+        )
     if name == "lgb_btyd_chrec":
         from ltv_data import CHANNEL_RECENCY_FEATURES, attach_channel_recency
 
-        return _fit_btyd_lgb(train_df, CHANNEL_RECENCY_FEATURES, attach_channel_recency, {"need_ch_rec": True})
+        return _fit_btyd_lgb(
+            train_df,
+            CHANNEL_RECENCY_FEATURES,
+            attach_channel_recency,
+            {"need_ch_rec": True},
+        )
     if name == "lgb_btyd_midcut":
         from ltv_data import load_named as _load
 
@@ -698,7 +975,9 @@ def fit_arm(name: str, train_df: pl.DataFrame, q50: float, q90: float) -> ArmMod
     if name == "lgb_btyd_rord":
         from ltv_data import RECENT_ORD_FEATURES, attach_recent_ord
 
-        return _fit_btyd_lgb(train_df, RECENT_ORD_FEATURES, attach_recent_ord, {"need_rord": True})
+        return _fit_btyd_lgb(
+            train_df, RECENT_ORD_FEATURES, attach_recent_ord, {"need_rord": True}
+        )
     if name == "channel_ens_weekday":
         from ltv_data import attach_extras
 
@@ -723,7 +1002,9 @@ def fit_arm(name: str, train_df: pl.DataFrame, q50: float, q90: float) -> ArmMod
         members = []
         for seed in (42, 7, 99):
             kw = {**H26_HGB, "random_state": seed}
-            members.append({"reg": fit_hgb(train_df, H26_COLS, "y", hgb_kw=kw), "cols": H26_COLS})
+            members.append(
+                {"reg": fit_hgb(train_df, H26_COLS, "y", hgb_kw=kw), "cols": H26_COLS}
+            )
         return ArmModel("single_head_ens", {"members": members})
     if name == "catboost_channel":
         from catboost import CatBoostRegressor
@@ -751,22 +1032,33 @@ def fit_arm(name: str, train_df: pl.DataFrame, q50: float, q90: float) -> ArmMod
         xs = _X(train_df, H26_COLS)
         base_pred = _pred_two_log_heads(base["reg_s"], base["reg_c"], xs)
         hist = train_df["hist_gmv"].to_numpy()
-        ro = train_df["recency_order_days"].fill_null(9999).to_numpy() if "recency_order_days" in train_df.columns else np.full(len(hist), 9999.0)
+        ro = (
+            train_df["recency_order_days"].fill_null(9999).to_numpy()
+            if "recency_order_days" in train_df.columns
+            else np.full(len(hist), 9999.0)
+        )
         mask = (hist > q50) & (hist <= q90) & (ro > 7) & (ro <= 30)
         y = np.clip(train_df["y"].to_numpy(), 0, None)
         resid = np.log1p(y) - np.log1p(np.clip(base_pred, 0, None))
-        reg = HistGradientBoostingRegressor(**{**H26_HGB, "random_state": 42, "max_iter": 120})
+        reg = HistGradientBoostingRegressor(
+            **{**H26_HGB, "random_state": 42, "max_iter": 120}
+        )
         if mask.sum() >= 1000:
             reg.fit(xs[mask], resid[mask])
         else:
             reg.fit(xs, resid)
-        return ArmModel("residual_mid_order", {"base": base, "resid": reg, "q50": q50, "q90": q90, "cols": H26_COLS})
+        return ArmModel(
+            "residual_mid_order",
+            {"base": base, "resid": reg, "q50": q50, "q90": q90, "cols": H26_COLS},
+        )
     if name == "channel_leaf50":
         cols = H26_COLS
         kw = {**H26_HGB, "min_samples_leaf": 50}
         members = []
         for seed in (42, 7, 99):
-            members.append(_fit_channel(train_df, cols, hgb_kw={**kw, "random_state": seed}))
+            members.append(
+                _fit_channel(train_df, cols, hgb_kw={**kw, "random_state": seed})
+            )
         return ArmModel("channel_ens", {"members": members})
     if name == "lgb_total":
         members = [_fit_lgb_head(train_df, H26_COLS, "y", seed) for seed in (42, 7, 99)]
@@ -777,8 +1069,22 @@ def fit_arm(name: str, train_df: pl.DataFrame, q50: float, q90: float) -> ArmMod
         for seed in (42, 7, 99):
             members.append(
                 {
-                    "reg_s": _fit_lgb_head(train_df, H26_COLS, "y_search", seed, extra_params=extra, y_transform="identity"),
-                    "reg_c": _fit_lgb_head(train_df, H26_COLS, "y_cat", seed, extra_params=extra, y_transform="identity"),
+                    "reg_s": _fit_lgb_head(
+                        train_df,
+                        H26_COLS,
+                        "y_search",
+                        seed,
+                        extra_params=extra,
+                        y_transform="identity",
+                    ),
+                    "reg_c": _fit_lgb_head(
+                        train_df,
+                        H26_COLS,
+                        "y_cat",
+                        seed,
+                        extra_params=extra,
+                        y_transform="identity",
+                    ),
                     "cols": H26_COLS,
                 }
             )
@@ -812,7 +1118,10 @@ def fit_arm(name: str, train_df: pl.DataFrame, q50: float, q90: float) -> ArmMod
         cols = H26_COLS + ["rfm_te"]
         members = [_fit_lgb_channel(work, cols, seed) for seed in (42, 7)]
         te_map, edges = _rfm_te_map(train_df)
-        return ArmModel("rfm_te", {"members": members, "te_map": te_map, "edges": edges, "cols": cols})
+        return ArmModel(
+            "rfm_te",
+            {"members": members, "te_map": te_map, "edges": edges, "cols": cols},
+        )
     if name == "vol_burst":
         from ltv_data import attach_vol
 
@@ -825,8 +1134,15 @@ def fit_arm(name: str, train_df: pl.DataFrame, q50: float, q90: float) -> ArmMod
 
         inner = _date(2025, 11, 15)
         cuts = train_df["cutoff"].to_list()
-        w = np.array([np.exp(-(inner - (c.date() if hasattr(c, "date") else c)).days / 21.0) for c in cuts])
-        members = [_fit_lgb_channel(train_df, H26_COLS, seed, weight=w) for seed in (42, 7, 99)]
+        w = np.array(
+            [
+                np.exp(-(inner - (c.date() if hasattr(c, "date") else c)).days / 21.0)
+                for c in cuts
+            ]
+        )
+        members = [
+            _fit_lgb_channel(train_df, H26_COLS, seed, weight=w) for seed in (42, 7, 99)
+        ]
         return ArmModel("lgb_channel_ens", {"members": members})
     if name == "isotonic_log":
         from sklearn.isotonic import IsotonicRegression
@@ -834,17 +1150,26 @@ def fit_arm(name: str, train_df: pl.DataFrame, q50: float, q90: float) -> ArmMod
         members = [_fit_lgb_channel(train_df, H26_COLS, seed) for seed in (42, 7, 99)]
         acc = None
         for mem in members:
-            part = _pred_two_log_heads(mem["reg_s"], mem["reg_c"], _X(train_df, H26_COLS))
+            part = _pred_two_log_heads(
+                mem["reg_s"], mem["reg_c"], _X(train_df, H26_COLS)
+            )
             acc = part if acc is None else acc + part
         pred = acc / len(members)
         iso = IsotonicRegression(out_of_bounds="clip", increasing=True)
-        iso.fit(np.log1p(np.clip(pred, 0, None)), np.log1p(np.clip(train_df["y"].to_numpy(), 0, None)))
+        iso.fit(
+            np.log1p(np.clip(pred, 0, None)),
+            np.log1p(np.clip(train_df["y"].to_numpy(), 0, None)),
+        )
         return ArmModel("isotonic_log", {"members": members, "iso": iso})
     if name == "blend_lgb_hgb":
         lgb_m = [_fit_lgb_channel(train_df, H26_COLS, seed) for seed in (42, 7, 99)]
         hgb_m = []
         for seed in (42, 7, 99):
-            hgb_m.append(_fit_channel(train_df, H26_COLS, hgb_kw={**H26_HGB, "random_state": seed}))
+            hgb_m.append(
+                _fit_channel(
+                    train_df, H26_COLS, hgb_kw={**H26_HGB, "random_state": seed}
+                )
+            )
         return ArmModel("blend_lgb_hgb", {"lgb": lgb_m, "hgb": hgb_m})
     if name == "xgb_channel":
         import xgboost as xgb
@@ -852,7 +1177,17 @@ def fit_arm(name: str, train_df: pl.DataFrame, q50: float, q90: float) -> ArmMod
         xs = _X(train_df, H26_COLS)
         members = []
         for seed in (42, 7, 99):
-            kw = dict(max_depth=8, n_estimators=320, learning_rate=0.04, min_child_weight=30, reg_lambda=1.0, subsample=1.0, n_jobs=4, random_state=seed, tree_method="hist")
+            kw = dict(
+                max_depth=8,
+                n_estimators=320,
+                learning_rate=0.04,
+                min_child_weight=30,
+                reg_lambda=1.0,
+                subsample=1.0,
+                n_jobs=4,
+                random_state=seed,
+                tree_method="hist",
+            )
             rs = xgb.XGBRegressor(**kw)
             rc = xgb.XGBRegressor(**kw)
             rs.fit(xs, np.log1p(np.clip(train_df["y_search"].to_numpy(), 0, None)))
@@ -863,10 +1198,21 @@ def fit_arm(name: str, train_df: pl.DataFrame, q50: float, q90: float) -> ArmMod
         members = [_fit_lgb_channel(train_df, H26_COLS, seed) for seed in (42, 7, 99)]
         return ArmModel("zero_hist_guard", {"members": members})
     if name == "channel_ens_decay":
-        cols = BASE_FEATURES + GAP_FEATURES + RATIO_FEATURES + ORDER_FEATURES + DECAY_FEATURES
+        cols = (
+            BASE_FEATURES
+            + GAP_FEATURES
+            + RATIO_FEATURES
+            + ORDER_FEATURES
+            + DECAY_FEATURES
+        )
         members = []
         for seed in (42, 7, 99):
-            kw = {**DEEPER_L2, "max_iter": 320, "learning_rate": 0.04, "random_state": seed}
+            kw = {
+                **DEEPER_L2,
+                "max_iter": 320,
+                "learning_rate": 0.04,
+                "random_state": seed,
+            }
             members.append(_fit_channel(train_df, cols, hgb_kw=kw))
         return ArmModel("channel_ens", {"members": members})
     if name == "channel_d7":
@@ -883,11 +1229,21 @@ def fit_arm(name: str, train_df: pl.DataFrame, q50: float, q90: float) -> ArmMod
         return ArmModel("channel_poisson", _fit_channel(train_p, cols, **extra))
     if name == "channel_quantile":
         cols = BASE_FEATURES + GAP_FEATURES + RATIO_FEATURES
-        kw = dict(max_depth=8, max_iter=220, learning_rate=0.05, min_samples_leaf=30, loss="quantile", quantile=0.6)
+        kw = dict(
+            max_depth=8,
+            max_iter=220,
+            learning_rate=0.05,
+            min_samples_leaf=30,
+            loss="quantile",
+            quantile=0.6,
+        )
         return ArmModel("channel_sum", _fit_channel(train_df, cols, hgb_kw=kw))
     if name == "channel_ratios_l2":
         cols = BASE_FEATURES + GAP_FEATURES + RATIO_FEATURES
-        return ArmModel("channel_sum", _fit_channel(train_df, cols, hgb_kw=dict(l2_regularization=1.0)))
+        return ArmModel(
+            "channel_sum",
+            _fit_channel(train_df, cols, hgb_kw=dict(l2_regularization=1.0)),
+        )
     if name == "channel_ratios_bucket_cal":
         cols = BASE_FEATURES + GAP_FEATURES + RATIO_FEATURES
         payload = _fit_channel(train_df, cols)
@@ -918,7 +1274,13 @@ def fit_arm(name: str, train_df: pl.DataFrame, q50: float, q90: float) -> ArmMod
         return ArmModel("channel_sum", _fit_channel(train_df, cols, hgb_kw=kw))
     if name == "channel_poisson":
         cols = BASE_FEATURES + GAP_FEATURES
-        extra = dict(loss="poisson", y_transform="identity", hgb_kw=dict(max_iter=120, max_depth=6, learning_rate=0.08, min_samples_leaf=40))
+        extra = dict(
+            loss="poisson",
+            y_transform="identity",
+            hgb_kw=dict(
+                max_iter=120, max_depth=6, learning_rate=0.08, min_samples_leaf=40
+            ),
+        )
         # Poisson needs y >= 0; sklearn forbids all-zero in some versions — add tiny eps in identity.
         train_p = train_df.with_columns(
             y_search=pl.col("y_search") + 1e-4,
@@ -997,7 +1359,13 @@ def predict_arm(model: ArmModel, eval_df: pl.DataFrame) -> np.ndarray:
     if name in ("hgb_log1p", "hgb_gaps"):
         pred = np.expm1(np.clip(p["reg"].predict(_X(eval_df, p["cols"])), -1, 20))
         return _clip(pred)
-    if name in ("channel_sum", "channel_cal", "channel_blend", "channel_bucket_cal", "channel_poisson"):
+    if name in (
+        "channel_sum",
+        "channel_cal",
+        "channel_blend",
+        "channel_bucket_cal",
+        "channel_poisson",
+    ):
         xs = _X(eval_df, p["cols"])
         if name == "channel_poisson":
             ps = np.clip(p["reg_s"].predict(xs), 0, None)
@@ -1079,7 +1447,9 @@ def predict_arm(model: ArmModel, eval_df: pl.DataFrame) -> np.ndarray:
         for mem in p["members"]:
             xs = _X(work, mem["cols"])
             if eps:
-                part = _pred_two_log_heads_eps(mem["reg_s"], mem["reg_c"], xs, float(eps))
+                part = _pred_two_log_heads_eps(
+                    mem["reg_s"], mem["reg_c"], xs, float(eps)
+                )
             else:
                 part = _pred_two_log_heads(mem["reg_s"], mem["reg_c"], xs)
             acc = part if acc is None else acc + part
@@ -1115,7 +1485,9 @@ def predict_arm(model: ArmModel, eval_df: pl.DataFrame) -> np.ndarray:
         pred = np.where(hist <= p["q50"], pl_, ph)
         return _clip(pred)
     if name == "zero_snap":
-        pred = _pred_two_log_heads(p["mem"]["reg_s"], p["mem"]["reg_c"], _X(eval_df, H26_COLS))
+        pred = _pred_two_log_heads(
+            p["mem"]["reg_s"], p["mem"]["reg_c"], _X(eval_df, H26_COLS)
+        )
         pred = pred.copy()
         pred[pred < p["tau"]] = 0.0
         return _clip(pred)
@@ -1135,7 +1507,9 @@ def predict_arm(model: ArmModel, eval_df: pl.DataFrame) -> np.ndarray:
     if name == "isotonic_log":
         acc = None
         for mem in p["members"]:
-            part = _pred_two_log_heads(mem["reg_s"], mem["reg_c"], _X(eval_df, H26_COLS))
+            part = _pred_two_log_heads(
+                mem["reg_s"], mem["reg_c"], _X(eval_df, H26_COLS)
+            )
             acc = part if acc is None else acc + part
         pred = acc / len(p["members"])
         cal = p["iso"].predict(np.log1p(np.clip(pred, 0, None)))
@@ -1143,13 +1517,33 @@ def predict_arm(model: ArmModel, eval_df: pl.DataFrame) -> np.ndarray:
     if name == "blend_lgb_hgb":
         acc_l = None
         for mem in p["lgb"]:
-            part = _pred_two_log_heads(mem["reg_s"], mem["reg_c"], _X(eval_df, H26_COLS))
+            part = _pred_two_log_heads(
+                mem["reg_s"], mem["reg_c"], _X(eval_df, H26_COLS)
+            )
             acc_l = part if acc_l is None else acc_l + part
         acc_h = None
         for mem in p["hgb"]:
             part = predict_arm(ArmModel("channel_sum", mem), eval_df)
             acc_h = part if acc_h is None else acc_h + part
         return _clip(0.5 * (acc_l / len(p["lgb"])) + 0.5 * (acc_h / len(p["hgb"])))
+    if name == "blend_h59_hgb":
+        from ltv_data import attach_channel_lags, attach_order_ipi
+
+        work, _ = _prepare_btyd(eval_df, p["bgnbd"])
+        work = attach_channel_lags(attach_order_ipi(work))
+        cols = p["cols"]
+        acc_l = None
+        for mem in p["lgb"]:
+            part = _pred_two_log_heads(mem["reg_s"], mem["reg_c"], _X(work, cols))
+            acc_l = part if acc_l is None else acc_l + part
+        acc_h = None
+        for mem in p["hgb"]:
+            part = predict_arm(ArmModel("channel_sum", mem), work)
+            acc_h = part if acc_h is None else acc_h + part
+        pred_lgb = np.clip(acc_l / len(p["lgb"]), 0, None)
+        pred_hgb = np.clip(acc_h / len(p["hgb"]), 0, None)
+        log_blend = 0.8 * np.log1p(pred_lgb) + 0.2 * np.log1p(pred_hgb)
+        return _clip(np.expm1(log_blend))
     if name == "blend_lgb_hgb_btyd":
         work, _ = _prepare_btyd(eval_df, p["bgnbd"])
         cols = p["cols"]
@@ -1175,7 +1569,9 @@ def predict_arm(model: ArmModel, eval_df: pl.DataFrame) -> np.ndarray:
     if name == "zero_hist_guard":
         acc = None
         for mem in p["members"]:
-            part = _pred_two_log_heads(mem["reg_s"], mem["reg_c"], _X(eval_df, H26_COLS))
+            part = _pred_two_log_heads(
+                mem["reg_s"], mem["reg_c"], _X(eval_df, H26_COLS)
+            )
             acc = part if acc is None else acc + part
         pred = acc / len(p["members"])
         pred = pred.copy()
@@ -1184,7 +1580,9 @@ def predict_arm(model: ArmModel, eval_df: pl.DataFrame) -> np.ndarray:
     if name == "single_head_ens":
         acc = None
         for mem in p["members"]:
-            part = np.expm1(np.clip(mem["reg"].predict(_X(eval_df, mem["cols"])), -1, 20))
+            part = np.expm1(
+                np.clip(mem["reg"].predict(_X(eval_df, mem["cols"])), -1, 20)
+            )
             acc = part if acc is None else acc + part
         return _clip(acc / len(p["members"]))
     if name == "mlp":

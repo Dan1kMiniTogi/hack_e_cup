@@ -28,6 +28,6 @@
 
 ## Устойчивые выводы
 
-- Champion **H59** `lgb_ipi_chlag`: primary 1.691937 / holdout 1.739946 (−0.0007 vs H52). IPI + канальные 30d лаги. Код: [`../workspace/ltv_arms.py`](../workspace/ltv_arms.py).
-- IPI+календарь ⚠️ holdout. Bucket c и log1p(y+1) на H52 — ❌ (как H14 и чужие transform).
-- Дальше: не calendar/c/ε; стек H59 с nested GMV-лагами осторожно. Синтез: [`past/SYNTHESIS.md`](past/SYNTHESIS.md).
+- Champion **H65** `lgb_h59_reg`: primary 1.691493 / holdout 1.739622 (−0.00044 vs H59). Регуляризация листьев и feature_fraction на стеке IPI+chlag. Код: [`../workspace/ltv_arms.py`](../workspace/ltv_arms.py).
+- H67 blend (LGB+HGB log-space) также побил H59 на обоих сплитах (1.691867 / 1.739769).
+- Дублирование лагов (H62), cart conversion (H64) и joint lags (H66) на H59 ведут к регрессии без регуляризации. Синтез: [`past/SYNTHESIS.md`](past/SYNTHESIS.md).
