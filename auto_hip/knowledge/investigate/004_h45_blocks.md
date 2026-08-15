@@ -10,7 +10,7 @@
 
 ## Наблюдения
 
-Цифры H45: [`../analytics/results/004_h45_debug.md`](../analytics/results/004_h45_debug.md). H47/H48: [`../past/archive/h47_funnel.md`](../past/archive/h47_funnel.md), [`../past/archive/h48_btyd.md`](../past/archive/h48_btyd.md).
+Цифры H45: [`../analytics/results/004_h45_debug.md`](../analytics/results/004_h45_debug.md). H47/H48: [`../past/h47_funnel.md`](../past/h47_funnel.md), [`../past/h48_btyd.md`](../past/h48_btyd.md).
 
 - H45 плато подтверждено: слой `H26_COLS` выжат (Spearman |ρ|<0.08). Mix библиотек −0.000012.
 - **H47 funnel ❌:** primary 1.696525 / holdout 1.741538 vs H45 1.696101 / 1.74135. persist/fixed/regress 24263/737/790. Воронка коллинеарна `to_ord`.

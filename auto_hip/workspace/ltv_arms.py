@@ -285,7 +285,7 @@ def _fit_lgb_head(
         seed: Booster RNG seed.
         weight: Optional per-row weights.
         extra_params: Overrides for LGB_PARAMS (e.g. tweedie).
-        y_transform: log1p | identity.
+        y_transform: log1p | identity | log1p_eps (log1p(y+1)).
         num_rounds: Boosting rounds, default LGB_ROUNDS.
 
     Returns:
@@ -297,7 +297,12 @@ def _fit_lgb_head(
     import lightgbm as lgb
 
     raw = np.clip(train_df[y_col].to_numpy(), 0, None)
-    y = np.log1p(raw) if y_transform == "log1p" else raw
+    if y_transform == "log1p":
+        y = np.log1p(raw)
+    elif y_transform == "log1p_eps":
+        y = np.log1p(raw + 1.0)
+    else:
+        y = raw
     params = {
         **LGB_PARAMS,
         **(extra_params or {}),
@@ -322,6 +327,25 @@ def _pred_two_log_heads(reg_s, reg_c, xs: np.ndarray) -> np.ndarray:
     """expm1 clip sum of two log-heads (sklearn or LightGBM)."""
     ps = np.expm1(np.clip(reg_s.predict(xs), -1, 20))
     pc = np.expm1(np.clip(reg_c.predict(xs), -1, 20))
+    return _clip(ps) + _clip(pc)
+
+
+def _pred_two_log_heads_eps(reg_s, reg_c, xs: np.ndarray, eps: float = 1.0) -> np.ndarray:
+    """Inverse of log1p(y+eps): clip(expm1(p) - eps) then sum heads.
+
+    Args:
+        reg_s, reg_c: Fitted boosters on log1p(y+eps).
+        xs: Feature matrix.
+        eps: Same constant used in training (default 1).
+
+    Returns:
+        Non-negative search+cat GMV.
+
+    Example:
+        pred = _pred_two_log_heads_eps(rs, rc, X, eps=1.0)
+    """
+    ps = np.expm1(np.clip(reg_s.predict(xs), -1, 20)) - eps
+    pc = np.expm1(np.clip(reg_c.predict(xs), -1, 20)) - eps
     return _clip(ps) + _clip(pc)
 
 
@@ -593,6 +617,62 @@ def fit_arm(name: str, train_df: pl.DataFrame, q50: float, q90: float) -> ArmMod
         from ltv_data import ORDER_IPI_FEATURES, attach_order_ipi
 
         return _fit_btyd_lgb(train_df, ORDER_IPI_FEATURES, attach_order_ipi, {"need_ipi": True})
+    if name == "lgb_ipi_cal":
+        from ltv_data import CALENDAR_FEATURES, ORDER_IPI_FEATURES, attach_calendar, attach_order_ipi
+
+        def _prep(d):
+            return attach_calendar(attach_order_ipi(d))
+
+        return _fit_btyd_lgb(
+            train_df,
+            ORDER_IPI_FEATURES + CALENDAR_FEATURES,
+            _prep,
+            {"need_ipi": True, "need_calendar": True},
+        )
+    if name == "lgb_ipi_chlag":
+        from ltv_data import CHANNEL_LAG_FEATURES, ORDER_IPI_FEATURES, attach_channel_lags, attach_order_ipi
+
+        def _prep(d):
+            return attach_channel_lags(attach_order_ipi(d))
+
+        return _fit_btyd_lgb(
+            train_df,
+            ORDER_IPI_FEATURES + CHANNEL_LAG_FEATURES,
+            _prep,
+            {"need_ipi": True, "need_ch_lags": True},
+        )
+    if name == "lgb_ipi_bucket_c":
+        from ltv_data import ORDER_IPI_FEATURES, attach_order_ipi
+
+        base = _fit_btyd_lgb(train_df, ORDER_IPI_FEATURES, attach_order_ipi, {"need_ipi": True})
+        pred = predict_arm(base, train_df)
+        y = train_df["y"].to_numpy()
+        hist = train_df["hist_gmv"].to_numpy()
+        buckets = {
+            "zero": hist <= 0,
+            "low": (hist > 0) & (hist <= q50),
+            "mid": (hist > q50) & (hist <= q90),
+            "high": hist > q90,
+        }
+        grid = np.linspace(0.8, 1.2, 21)
+        cs = {}
+        for b, mask in buckets.items():
+            cs[b] = 1.0 if mask.sum() < 100 else float(np.clip(_best_c(y[mask], pred[mask], grid), 0.8, 1.2))
+        return ArmModel(
+            "lgb_ipi_bucket_c",
+            {**base.payload, "c_buckets": cs, "q50": q50, "q90": q90},
+        )
+    if name == "lgb_ipi_logeps":
+        from ltv_data import ORDER_IPI_FEATURES, attach_order_ipi
+
+        work, params = _prepare_btyd(train_df)
+        work = attach_order_ipi(work)
+        cols = H26_COLS + BTYD_FEATURES + ORDER_IPI_FEATURES
+        members = [_fit_lgb_channel(work, cols, seed, y_transform="log1p_eps") for seed in (42, 7, 99)]
+        return ArmModel(
+            "lgb_channel_ens",
+            {"members": members, "need_btyd": True, "bgnbd": params, "need_ipi": True, "log_eps": 1.0},
+        )
     if name == "lgb_btyd_chlag":
         from ltv_data import CHANNEL_LAG_FEATURES, attach_channel_lags
 
@@ -995,11 +1075,25 @@ def predict_arm(model: ArmModel, eval_df: pl.DataFrame) -> np.ndarray:
 
             work = attach_recent_ord(work)
         acc = None
+        eps = p.get("log_eps")
         for mem in p["members"]:
             xs = _X(work, mem["cols"])
-            part = _pred_two_log_heads(mem["reg_s"], mem["reg_c"], xs)
+            if eps:
+                part = _pred_two_log_heads_eps(mem["reg_s"], mem["reg_c"], xs, float(eps))
+            else:
+                part = _pred_two_log_heads(mem["reg_s"], mem["reg_c"], xs)
             acc = part if acc is None else acc + part
         return _clip(acc / len(p["members"]))
+    if name == "lgb_ipi_bucket_c":
+        pred = predict_arm(ArmModel("lgb_channel_ens", p), eval_df)
+        hist = eval_df["hist_gmv"].to_numpy()
+        cs = p["c_buckets"]
+        scale = np.ones_like(pred)
+        scale[hist <= 0] = cs["zero"]
+        scale[(hist > 0) & (hist <= p["q50"])] = cs["low"]
+        scale[(hist > p["q50"]) & (hist <= p["q90"])] = cs["mid"]
+        scale[hist > p["q90"]] = cs["high"]
+        return _clip(scale * pred)
     if name == "lgb_total":
         acc = None
         for bst in p["members"]:

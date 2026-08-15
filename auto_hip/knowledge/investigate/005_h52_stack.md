@@ -2,7 +2,7 @@
 
 **Дата / split:** local_val_cutoff_2026-01-14
 **Опорный run:** `workspace/runs/h52_ipi` · arm `lgb_btyd_ipi` vs H48 `h48_btyd`
-**Статус:** open
+**Статус:** closed
 
 ## Вопрос
 

@@ -1,10 +1,10 @@
 # INDEX — scorecard гипотез
 
-**Champion: H52** `lgb_btyd_ipi` · primary **1.692618** · holdout **1.740169**. Предыдущий H48 BTYD 1.693588 / 1.740301.
+**Champion: H59** `lgb_ipi_chlag` · primary **1.691937** · holdout **1.739946**. Предыдущий H52 IPI 1.692618 / 1.740169.
 
-Синтез линий и cemetery: [`SYNTHESIS.md`](SYNTHESIS.md). Отчёты: [`archive/`](archive/). Аудит H45: [`../analytics/results/004_h45_debug.md`](../analytics/results/004_h45_debug.md).
+Синтез: [`SYNTHESIS.md`](SYNTHESIS.md). Линии: [`lines/`](lines/). Активные отчёты (~15): `h47_*.md`…`h61_*.md` в корне. Аудит H45: [`../analytics/results/004_h45_debug.md`](../analytics/results/004_h45_debug.md).
 
-Почти весь выигрыш — H04 (−0.487) и две головы H05 (−0.009). H48 BTYD −0.0025 vs H45; H52 IPI ещё −0.0010 vs H48. Refine деревьев на голых `H26_COLS` исчерпан.
+Почти весь выигрыш — H04 (−0.487) и две головы H05 (−0.009). H48 BTYD −0.0025 vs H45; H52 IPI −0.0010 vs H48; H59 IPI+chlag −0.0007 vs H52.
 
 | id | status | type | primary metrics | vs champion | note |
 |----|--------|------|-----------------|-------------|------|
@@ -60,11 +60,15 @@
 | H49 | ⚠️ | explore | rmsle 1.693343 | holdout 1.740312 worse | calendar 30d |
 | H50 | ✅ | explore | rmsle 1.693554 | vs H48 both, < H52 | nested GMV lags |
 | H51 | ❌ | explore | rmsle 1.694336 | хуже H48 | channel BTYD |
-| H52 | ✅ | explore | rmsle 1.692618 | vs H48 both better | **champion** order IPI |
+| H52 | ✅ | explore | rmsle 1.692618 | vs H48 both better | order IPI |
 | H53 | ✅ | explore | rmsle 1.693417 | vs H48 both, < H52 | channel lags |
 | H54 | ❌ | pivot | rmsle 1.693688 | хуже H48 primary | LGB+HGB на BTYD |
 | H55 | ❌ | explore | rmsle 1.693671 | хуже H48 primary | channel recency |
 | H56 | ❌ | pivot | rmsle 1.694647 | хуже H48 | якорь 2025-11-08 |
 | H57 | ✅ | refine | rmsle 1.693444 | vs H48 both, < H52 | ord days 30/90 |
+| H58 | ⚠️ | explore | rmsle 1.692532 | holdout 1.740267 worse | IPI+calendar |
+| H59 | ✅ | explore | rmsle 1.691937 | vs H52 both better | **champion** IPI+chlag |
+| H60 | ❌ | refine | rmsle 1.702081 | хуже H52 | bucket c на IPI |
+| H61 | ❌ | refine | rmsle 1.729107 | хуже H52 | log1p(y+1) |
 
-Легенда status: ✅ принята · ⚠️ кандидат / нужен holdout · ❌ отклонена. Отчёт Hx → [`archive/`](archive/).
+Легенда status: ✅ принята · ⚠️ кандидат / нужен holdout · ❌ отклонена. Полный отчёт Hx → корень `past/` (окно ~15) или свёртка в [`lines/`](lines/).

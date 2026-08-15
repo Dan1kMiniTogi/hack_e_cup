@@ -24,10 +24,10 @@
 
 - Агрегаты/последовательности по пользователю до cutoff → модель 30d GMV → `max(0, pred)` → RMSLE vs сумма `gmv` в окне (нет строки = 0).
 - Эксперименты: код, pred, meta — [`../workspace/`](../workspace/) (`ltv_arms.py`, `ltv_data.py`, `runner.py`). Knowledge-цикл — эта папка.
-- Control: naive last-30d. Champion: H52 `lgb_btyd_ipi`, `champion_run: h52_ipi` в [`config.yaml`](../config.yaml).
+- Control: naive last-30d. Champion: H59 `lgb_ipi_chlag`, `champion_run: h59_ipi_chlag` в [`config.yaml`](../config.yaml).
 
 ## Устойчивые выводы
 
-- Champion **H52** `lgb_btyd_ipi`: primary 1.692618 / holdout 1.740169 (−0.0010 vs H48). IPI по дням заказа поверх BTYD. Код: [`../workspace/ltv_arms.py`](../workspace/ltv_arms.py).
-- H48 BTYD обязателен; канальный BTYD/recency и mix HGB на BTYD — нет. Календарь соло ⚠️ holdout. Extra cutoff 8.11 как H22.
-- Дальше: стек IPI с календарём и канальными лагами. Синтез: [`past/SYNTHESIS.md`](past/SYNTHESIS.md).
+- Champion **H59** `lgb_ipi_chlag`: primary 1.691937 / holdout 1.739946 (−0.0007 vs H52). IPI + канальные 30d лаги. Код: [`../workspace/ltv_arms.py`](../workspace/ltv_arms.py).
+- IPI+календарь ⚠️ holdout. Bucket c и log1p(y+1) на H52 — ❌ (как H14 и чужие transform).
+- Дальше: не calendar/c/ε; стек H59 с nested GMV-лагами осторожно. Синтез: [`past/SYNTHESIS.md`](past/SYNTHESIS.md).
