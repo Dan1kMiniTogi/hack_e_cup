@@ -74,6 +74,35 @@ LASTK_FEATURES = [
     "searches_after_last_ord",
 ]
 VOL_FEATURES = ["gmv_day_std", "gmv_day_max", "n_active_weeks", "gmv_concentration"]
+FUNNEL_FEATURES = [
+    "search_to_ord_sum_7d",
+    "search_to_ord_sum_30d",
+    "search_to_ord_sum_90d",
+    "cat_to_ord_sum_7d",
+    "cat_to_ord_sum_30d",
+    "cat_to_ord_sum_90d",
+    "search_to_cart_sum_7d",
+    "search_to_cart_sum_30d",
+    "search_to_cart_sum_90d",
+    "cat_to_cart_sum_7d",
+    "cat_to_cart_sum_30d",
+    "cat_to_cart_sum_90d",
+    "hist_has_search_to_ord",
+    "hist_has_cat_to_ord",
+    "hist_has_search_to_cart",
+    "hist_has_cat_to_cart",
+]
+BTYD_FEATURES = [
+    "btyd_frequency",
+    "btyd_recency_tx",
+    "btyd_T",
+    "btyd_aov",
+    "btyd_n_purch",
+    "btyd_days_since_last",
+    "btyd_p_alive",
+    "btyd_e_purch_30",
+    "btyd_e_gmv",
+]
 H26_COLS = BASE_FEATURES + GAP_FEATURES + RATIO_FEATURES + ORDER_FEATURES
 DEEPER_L2 = dict(max_depth=8, max_iter=220, learning_rate=0.05, min_samples_leaf=30, l2_regularization=1.0)
 H26_HGB = {**DEEPER_L2, "max_iter": 320, "learning_rate": 0.04}
@@ -387,6 +416,57 @@ def fit_hurdle(train_df: pl.DataFrame, cols: list[str]) -> ArmModel:
     return ArmModel("hurdle", {"clf": clf, "reg": reg, "cols": cols})
 
 
+def _prepare_btyd(df: pl.DataFrame, params: dict[str, float] | None = None) -> tuple[pl.DataFrame, dict[str, float]]:
+    """Attach BTYD RFM and BG-NBD-like derived columns.
+
+    Args:
+        df: Cutoff table with user_id and cutoff.
+        params: Optional r, alpha, a, b from fit; if None, estimated on df.
+
+    Returns:
+        (annotated df, params used).
+
+    Example:
+        work, params = _prepare_btyd(train_df)
+    """
+    from ltv_data import add_bgnbd_derived, attach_btyd, bgnbd_moments
+
+    work = attach_btyd(df)
+    if params is None:
+        params = bgnbd_moments(work["btyd_frequency"].to_numpy(), work["btyd_T"].to_numpy())
+    return add_bgnbd_derived(work, params), params
+
+
+def _fit_btyd_lgb(
+    train_df: pl.DataFrame,
+    extra_cols: list[str],
+    extra_prepare,
+    flags: dict[str, Any],
+) -> ArmModel:
+    """H48 two-head LGB on H26+BTYD plus extra columns.
+
+    Args:
+        train_df: Fit rows.
+        extra_cols: Added to H26_COLS + BTYD_FEATURES.
+        extra_prepare: Callable df -> df (attach extra features).
+        flags: Payload flags for predict_arm (need_*).
+
+    Returns:
+        ArmModel name ``lgb_channel_ens``.
+
+    Example:
+        model = _fit_btyd_lgb(train, ["cal_month"], attach_calendar, {"need_calendar": True})
+    """
+    work, params = _prepare_btyd(train_df)
+    work = extra_prepare(work)
+    cols = H26_COLS + BTYD_FEATURES + extra_cols
+    members = [_fit_lgb_channel(work, cols, seed) for seed in (42, 7, 99)]
+    return ArmModel(
+        "lgb_channel_ens",
+        {"members": members, "need_btyd": True, "bgnbd": params, **flags},
+    )
+
+
 def fit_arm(name: str, train_df: pl.DataFrame, q50: float, q90: float) -> ArmModel:
     """Fit named arm on train-fit rows.
 
@@ -488,6 +568,57 @@ def fit_arm(name: str, train_df: pl.DataFrame, q50: float, q90: float) -> ArmMod
     if name == "lgb_channel_ens":
         members = [_fit_lgb_channel(train_df, H26_COLS, seed) for seed in (42, 7, 99)]
         return ArmModel("lgb_channel_ens", {"members": members})
+    if name == "lgb_funnel":
+        from ltv_data import attach_funnel
+
+        train_df = attach_funnel(train_df)
+        cols = H26_COLS + FUNNEL_FEATURES
+        members = [_fit_lgb_channel(train_df, cols, seed) for seed in (42, 7, 99)]
+        return ArmModel("lgb_channel_ens", {"members": members, "need_funnel": True})
+    if name == "lgb_btyd":
+        return _fit_btyd_lgb(train_df, [], lambda d: d, {})
+    if name == "lgb_btyd_cal":
+        from ltv_data import CALENDAR_FEATURES, attach_calendar
+
+        return _fit_btyd_lgb(train_df, CALENDAR_FEATURES, attach_calendar, {"need_calendar": True})
+    if name == "lgb_btyd_lags":
+        from ltv_data import NESTED_LAG_FEATURES, add_nested_gmv_lags
+
+        return _fit_btyd_lgb(train_df, NESTED_LAG_FEATURES, add_nested_gmv_lags, {"need_lags": True})
+    if name == "lgb_btyd_chbtyd":
+        from ltv_data import CHANNEL_BTYD_FEATURES, attach_channel_btyd
+
+        return _fit_btyd_lgb(train_df, CHANNEL_BTYD_FEATURES, attach_channel_btyd, {"need_ch_btyd": True})
+    if name == "lgb_btyd_ipi":
+        from ltv_data import ORDER_IPI_FEATURES, attach_order_ipi
+
+        return _fit_btyd_lgb(train_df, ORDER_IPI_FEATURES, attach_order_ipi, {"need_ipi": True})
+    if name == "lgb_btyd_chlag":
+        from ltv_data import CHANNEL_LAG_FEATURES, attach_channel_lags
+
+        return _fit_btyd_lgb(train_df, CHANNEL_LAG_FEATURES, attach_channel_lags, {"need_ch_lags": True})
+    if name == "blend_lgb_hgb_btyd":
+        work, params = _prepare_btyd(train_df)
+        cols = H26_COLS + BTYD_FEATURES
+        lgb_m = [_fit_lgb_channel(work, cols, seed) for seed in (42, 7, 99)]
+        hgb_m = []
+        for seed in (42, 7, 99):
+            hgb_m.append(_fit_channel(work, cols, hgb_kw={**H26_HGB, "random_state": seed}))
+        return ArmModel("blend_lgb_hgb_btyd", {"lgb": lgb_m, "hgb": hgb_m, "bgnbd": params, "cols": cols})
+    if name == "lgb_btyd_chrec":
+        from ltv_data import CHANNEL_RECENCY_FEATURES, attach_channel_recency
+
+        return _fit_btyd_lgb(train_df, CHANNEL_RECENCY_FEATURES, attach_channel_recency, {"need_ch_rec": True})
+    if name == "lgb_btyd_midcut":
+        from ltv_data import load_named as _load
+
+        extra = _load("train_d")
+        train_df = pl.concat([train_df, extra], how="vertical_relaxed")
+        return _fit_btyd_lgb(train_df, [], lambda d: d, {})
+    if name == "lgb_btyd_rord":
+        from ltv_data import RECENT_ORD_FEATURES, attach_recent_ord
+
+        return _fit_btyd_lgb(train_df, RECENT_ORD_FEATURES, attach_recent_ord, {"need_rord": True})
     if name == "channel_ens_weekday":
         from ltv_data import attach_extras
 
@@ -826,7 +957,43 @@ def predict_arm(model: ArmModel, eval_df: pl.DataFrame) -> np.ndarray:
         if p.get("need_vol"):
             from ltv_data import attach_vol
 
-            work = attach_vol(eval_df)
+            work = attach_vol(work)
+        if p.get("need_funnel"):
+            from ltv_data import attach_funnel
+
+            work = attach_funnel(work)
+        if p.get("need_btyd"):
+            from ltv_data import add_bgnbd_derived, attach_btyd
+
+            work = add_bgnbd_derived(attach_btyd(work), p["bgnbd"])
+        if p.get("need_calendar"):
+            from ltv_data import attach_calendar
+
+            work = attach_calendar(work)
+        if p.get("need_lags"):
+            from ltv_data import add_nested_gmv_lags
+
+            work = add_nested_gmv_lags(work)
+        if p.get("need_ch_btyd"):
+            from ltv_data import attach_channel_btyd
+
+            work = attach_channel_btyd(work)
+        if p.get("need_ipi"):
+            from ltv_data import attach_order_ipi
+
+            work = attach_order_ipi(work)
+        if p.get("need_ch_lags"):
+            from ltv_data import attach_channel_lags
+
+            work = attach_channel_lags(work)
+        if p.get("need_ch_rec"):
+            from ltv_data import attach_channel_recency
+
+            work = attach_channel_recency(work)
+        if p.get("need_rord"):
+            from ltv_data import attach_recent_ord
+
+            work = attach_recent_ord(work)
         acc = None
         for mem in p["members"]:
             xs = _X(work, mem["cols"])
@@ -887,6 +1054,18 @@ def predict_arm(model: ArmModel, eval_df: pl.DataFrame) -> np.ndarray:
         acc_h = None
         for mem in p["hgb"]:
             part = predict_arm(ArmModel("channel_sum", mem), eval_df)
+            acc_h = part if acc_h is None else acc_h + part
+        return _clip(0.5 * (acc_l / len(p["lgb"])) + 0.5 * (acc_h / len(p["hgb"])))
+    if name == "blend_lgb_hgb_btyd":
+        work, _ = _prepare_btyd(eval_df, p["bgnbd"])
+        cols = p["cols"]
+        acc_l = None
+        for mem in p["lgb"]:
+            part = _pred_two_log_heads(mem["reg_s"], mem["reg_c"], _X(work, cols))
+            acc_l = part if acc_l is None else acc_l + part
+        acc_h = None
+        for mem in p["hgb"]:
+            part = predict_arm(ArmModel("channel_sum", mem), work)
             acc_h = part if acc_h is None else acc_h + part
         return _clip(0.5 * (acc_l / len(p["lgb"])) + 0.5 * (acc_h / len(p["hgb"])))
     if name == "residual_mid_order":

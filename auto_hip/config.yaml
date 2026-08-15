@@ -40,9 +40,9 @@ acceptance:
 
 baselines:
   control: naive_autoregressive
-champion: blend_lgb_hgb
-champion_run: h45_blend
-champion_arm: blend_lgb_hgb
+champion: lgb_btyd_ipi
+champion_run: h52_ipi
+champion_arm: lgb_btyd_ipi
 
 banned_lines:
   - hurdle_zero_positive

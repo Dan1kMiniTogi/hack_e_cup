@@ -26,6 +26,7 @@ CUTOFFS = {
     "train_b": date(2025, 11, 1),
     "train_a": date(2025, 10, 18),
     "train_c": date(2025, 10, 4),
+    "train_d": date(2025, 11, 8),
     "holdout": date(2025, 12, 15),
     "primary": date(2026, 1, 14),
     "test": date(2026, 2, 13),
@@ -407,7 +408,8 @@ def build_btyd_features(cutoff: date, *, cache: bool = True) -> pl.DataFrame:
     df = df.with_columns(
         btyd_n_purch=pl.col("btyd_n_purch").fill_null(0),
         purch_gmv=pl.col("purch_gmv").fill_null(0.0),
-        btyd_frequency=pl.max_horizontal(pl.col("btyd_n_purch").fill_null(0) - 1, pl.lit(0)),
+    ).with_columns(
+        btyd_frequency=(pl.col("btyd_n_purch") - 1).clip(lower_bound=0),
         btyd_recency_tx=pl.when(pl.col("first_purch").is_null())
         .then(0)
         .otherwise((pl.col("last_purch") - pl.col("first_purch")).dt.total_days()),
@@ -417,7 +419,7 @@ def build_btyd_features(cutoff: date, *, cache: bool = True) -> pl.DataFrame:
         btyd_days_since_last=pl.when(pl.col("last_purch").is_null())
         .then(9999)
         .otherwise((cutoff_lit - pl.col("last_purch")).dt.total_days()),
-        btyd_aov=pl.col("purch_gmv").fill_null(0.0) / (pl.col("btyd_n_purch").fill_null(0) + 1e-9),
+        btyd_aov=pl.col("purch_gmv") / (pl.col("btyd_n_purch") + 1e-9),
     ).select(
         "user_id",
         "btyd_n_purch",
@@ -542,6 +544,505 @@ def attach_vol(df: pl.DataFrame) -> pl.DataFrame:
     for co in df["cutoff"].unique().to_list():
         part = df.filter(pl.col("cutoff") == co)
         parts.append(part.join(build_vol_features(co), on="user_id", how="left"))
+    return pl.concat(parts, how="vertical_relaxed")
+
+
+RU_HOLIDAYS = {
+    date(2025, 11, 4),
+    date(2025, 12, 31),
+    date(2026, 1, 1),
+    date(2026, 1, 2),
+    date(2026, 1, 3),
+    date(2026, 1, 4),
+    date(2026, 1, 5),
+    date(2026, 1, 6),
+    date(2026, 1, 7),
+    date(2026, 1, 8),
+    date(2026, 2, 14),
+    date(2026, 2, 23),
+    date(2026, 3, 8),
+}
+
+CALENDAR_FEATURES = [
+    "cal_month",
+    "cal_n_weekend",
+    "cal_n_holiday",
+    "cal_holiday_share",
+    "cal_has_ny",
+    "cal_has_feb14",
+    "cal_has_feb23",
+    "cal_has_mar8",
+]
+NESTED_LAG_FEATURES = [
+    "gmv_lag1_30",
+    "gmv_lag2_30",
+    "gmv_lag3_30",
+    "gmv_lag_ratio_21",
+    "gmv_lag_ratio_32",
+]
+CHANNEL_LAG_FEATURES = [
+    "gmv_search_lag1_30",
+    "gmv_search_lag2_30",
+    "gmv_search_lag3_30",
+    "gmv_search_lag_ratio_21",
+    "gmv_cat_lag1_30",
+    "gmv_cat_lag2_30",
+    "gmv_cat_lag3_30",
+    "gmv_cat_lag_ratio_21",
+    "to_ord_lag1_30",
+    "to_ord_lag2_30",
+    "to_ord_lag3_30",
+    "to_ord_lag_ratio_21",
+]
+CHANNEL_BTYD_FEATURES = [
+    "sbtyd_frequency",
+    "sbtyd_recency_tx",
+    "sbtyd_T",
+    "sbtyd_aov",
+    "sbtyd_n_purch",
+    "sbtyd_days_since_last",
+    "cbtyd_frequency",
+    "cbtyd_recency_tx",
+    "cbtyd_T",
+    "cbtyd_aov",
+    "cbtyd_n_purch",
+    "cbtyd_days_since_last",
+]
+ORDER_IPI_FEATURES = ["ord_mean_gap", "ord_std_gap", "ord_last_gap", "ord_n_gaps"]
+CHANNEL_RECENCY_FEATURES = [
+    "recency_search_days",
+    "recency_cat_days",
+    "recency_search_ord_days",
+    "recency_cat_ord_days",
+]
+RECENT_ORD_FEATURES = ["ord_days_30d", "ord_days_90d", "ord_days_ratio_30_90"]
+
+
+def calendar_features_for_cutoff(cutoff: date) -> dict[str, float]:
+    """Target-window calendar known at cutoff (no labels, same for all users).
+
+    Args:
+        cutoff: Last history date; window is cutoff+1 .. cutoff+30.
+
+    Returns:
+        Mapping of CALENDAR_FEATURES.
+
+    Example:
+        row = calendar_features_for_cutoff(date(2026, 1, 14))
+    """
+    days = [cutoff + timedelta(days=i) for i in range(1, HORIZON_DAYS + 1)]
+    n_we = sum(d.weekday() >= 5 for d in days)
+    n_hol = sum(d in RU_HOLIDAYS for d in days)
+    dset = set(days)
+    return {
+        "cal_month": float(days[0].month),
+        "cal_n_weekend": float(n_we),
+        "cal_n_holiday": float(n_hol),
+        "cal_holiday_share": float(n_hol / HORIZON_DAYS),
+        "cal_has_ny": float(any(d.month == 1 and d.day <= 8 for d in days)),
+        "cal_has_feb14": float(date(2026, 2, 14) in dset),
+        "cal_has_feb23": float(date(2026, 2, 23) in dset),
+        "cal_has_mar8": float(date(2026, 3, 8) in dset),
+    }
+
+
+def attach_calendar(df: pl.DataFrame) -> pl.DataFrame:
+    """Broadcast calendar features by cutoff already on ``df``.
+
+    Args:
+        df: Table with cutoff.
+
+    Returns:
+        Same rows plus CALENDAR_FEATURES (idempotent).
+
+    Example:
+        train = attach_calendar(concat_train_fit())
+    """
+    if "cal_month" in df.columns:
+        return df
+    parts: list[pl.DataFrame] = []
+    for co in df["cutoff"].unique().to_list():
+        part = df.filter(pl.col("cutoff") == co)
+        cal = calendar_features_for_cutoff(co.date() if hasattr(co, "date") else co)
+        parts.append(part.with_columns(**{k: pl.lit(v) for k, v in cal.items()}))
+    return pl.concat(parts, how="vertical_relaxed")
+
+
+def add_nested_gmv_lags(df: pl.DataFrame) -> pl.DataFrame:
+    """Disjoint 30d GMV blocks from nested 30/60/90 sums (no extra scan).
+
+    Args:
+        df: Cutoff table with gmv_sum_30d/60d/90d.
+
+    Returns:
+        df plus NESTED_LAG_FEATURES (idempotent).
+
+    Example:
+        work = add_nested_gmv_lags(load_named("primary"))
+    """
+    if "gmv_lag1_30" in df.columns:
+        return df
+    return df.with_columns(
+        gmv_lag1_30=pl.col("gmv_sum_30d"),
+        gmv_lag2_30=pl.col("gmv_sum_60d") - pl.col("gmv_sum_30d"),
+        gmv_lag3_30=pl.col("gmv_sum_90d") - pl.col("gmv_sum_60d"),
+    ).with_columns(
+        gmv_lag_ratio_21=pl.col("gmv_lag2_30") / (pl.col("gmv_lag1_30") + 1.0),
+        gmv_lag_ratio_32=pl.col("gmv_lag3_30") / (pl.col("gmv_lag2_30") + 1.0),
+    )
+
+
+def _lag_block_exprs(cutoff: date) -> list[pl.Expr]:
+    """Sum gmv_search/gmv_cat/to_ord on three disjoint 30d blocks ending at cutoff."""
+    exprs: list[pl.Expr] = []
+    blocks = [("lag1", 0, 29), ("lag2", 30, 59), ("lag3", 60, 89)]
+    for name, near, far in blocks:
+        start = cutoff - timedelta(days=far)
+        end = cutoff - timedelta(days=near)
+        mask = pl.col("event_date").is_between(start, end)
+        for col in ("gmv_search", "gmv_cat", "to_ord"):
+            exprs.append(
+                pl.when(mask).then(pl.col(col)).otherwise(0).sum().alias(f"{col}_{name}_30")
+            )
+    return exprs
+
+
+def build_channel_lag_features(cutoff: date, *, cache: bool = True) -> pl.DataFrame:
+    """Disjoint 30d channel GMV and to_ord lags (no densify).
+
+    Args:
+        cutoff: Last history date.
+        cache: ``features_{cutoff}_chlag_v1.parquet``.
+
+    Returns:
+        One row per user with CHANNEL_LAG_FEATURES.
+
+    Example:
+        extra = build_channel_lag_features(date(2026, 1, 14))
+    """
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    path = CACHE_DIR / f"features_{cutoff.isoformat()}_chlag_v1.parquet"
+    if cache and path.exists():
+        return pl.read_parquet(path)
+    lf = pl.scan_parquet(PARQUET_PATH)
+    users = lf.select(pl.col("user_id").unique())
+    lags = lf.filter(pl.col("event_date") <= cutoff).group_by("user_id").agg(_lag_block_exprs(cutoff))
+    df = users.join(lags, on="user_id", how="left").collect()
+    nums = [c for c in df.columns if c != "user_id"]
+    df = df.with_columns([pl.col(c).fill_null(0) for c in nums])
+    df = df.with_columns(
+        gmv_search_lag_ratio_21=pl.col("gmv_search_lag2_30") / (pl.col("gmv_search_lag1_30") + 1.0),
+        gmv_cat_lag_ratio_21=pl.col("gmv_cat_lag2_30") / (pl.col("gmv_cat_lag1_30") + 1.0),
+        to_ord_lag_ratio_21=pl.col("to_ord_lag2_30") / (pl.col("to_ord_lag1_30") + 1.0),
+    )
+    if cache:
+        df.write_parquet(path)
+    return df
+
+
+def attach_channel_lags(df: pl.DataFrame) -> pl.DataFrame:
+    """Join channel-lag panel per cutoff on ``df``.
+
+    Args:
+        df: Table with user_id and cutoff.
+
+    Returns:
+        Rows plus CHANNEL_LAG_FEATURES (idempotent).
+
+    Example:
+        train = attach_channel_lags(concat_train_fit())
+    """
+    if "gmv_search_lag1_30" in df.columns:
+        return df
+    parts: list[pl.DataFrame] = []
+    for co in df["cutoff"].unique().to_list():
+        part = df.filter(pl.col("cutoff") == co)
+        parts.append(part.join(build_channel_lag_features(co), on="user_id", how="left"))
+    return pl.concat(parts, how="vertical_relaxed")
+
+
+def _channel_purch_agg(lf_hist: pl.LazyFrame, flag_col: str, prefix: str) -> pl.LazyFrame:
+    """Lifetime RFM/AOV on days where ``flag_col`` > 0."""
+    return (
+        lf_hist.filter(pl.col(flag_col) > 0)
+        .group_by("user_id")
+        .agg(
+            pl.len().alias(f"{prefix}_n_purch"),
+            pl.col("event_date").min().alias(f"{prefix}_first"),
+            pl.col("event_date").max().alias(f"{prefix}_last"),
+            pl.sum("gmv").alias(f"{prefix}_gmv"),
+        )
+    )
+
+
+def build_channel_btyd_features(cutoff: date, *, cache: bool = True) -> pl.DataFrame:
+    """Search vs catalog purchase RFM from search_to_ord / cat_to_ord days.
+
+    Args:
+        cutoff: Last history date.
+        cache: ``features_{cutoff}_chbtyd_v1.parquet``.
+
+    Returns:
+        CHANNEL_BTYD_FEATURES, never-ordered channel filled like global BTYD.
+
+    Example:
+        extra = build_channel_btyd_features(date(2026, 1, 14))
+    """
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    path = CACHE_DIR / f"features_{cutoff.isoformat()}_chbtyd_v1.parquet"
+    if cache and path.exists():
+        return pl.read_parquet(path)
+    lf = pl.scan_parquet(PARQUET_PATH)
+    users = lf.select(pl.col("user_id").unique())
+    lf_hist = lf.filter(pl.col("event_date") <= cutoff)
+    s_agg = _channel_purch_agg(lf_hist, "search_to_ord", "sbtyd")
+    c_agg = _channel_purch_agg(lf_hist, "cat_to_ord", "cbtyd")
+    df = users.join(s_agg, on="user_id", how="left").join(c_agg, on="user_id", how="left").collect()
+    cutoff_lit = pl.lit(cutoff)
+
+    def _finalize(prefix: str) -> list[pl.Expr]:
+        return [
+            pl.col(f"{prefix}_n_purch").fill_null(0).alias(f"{prefix}_n_purch"),
+            pl.col(f"{prefix}_gmv").fill_null(0.0).alias(f"{prefix}_gmv"),
+            (pl.col(f"{prefix}_n_purch").fill_null(0) - 1).clip(lower_bound=0).alias(f"{prefix}_frequency"),
+            pl.when(pl.col(f"{prefix}_first").is_null())
+            .then(0)
+            .otherwise((pl.col(f"{prefix}_last") - pl.col(f"{prefix}_first")).dt.total_days())
+            .alias(f"{prefix}_recency_tx"),
+            pl.when(pl.col(f"{prefix}_first").is_null())
+            .then(0)
+            .otherwise((cutoff_lit - pl.col(f"{prefix}_first")).dt.total_days())
+            .alias(f"{prefix}_T"),
+            pl.when(pl.col(f"{prefix}_last").is_null())
+            .then(9999)
+            .otherwise((cutoff_lit - pl.col(f"{prefix}_last")).dt.total_days())
+            .alias(f"{prefix}_days_since_last"),
+            (pl.col(f"{prefix}_gmv").fill_null(0.0) / (pl.col(f"{prefix}_n_purch").fill_null(0) + 1e-9)).alias(
+                f"{prefix}_aov"
+            ),
+        ]
+
+    df = df.with_columns(_finalize("sbtyd") + _finalize("cbtyd")).select(["user_id"] + CHANNEL_BTYD_FEATURES)
+    if cache:
+        df.write_parquet(path)
+    return df
+
+
+def attach_channel_btyd(df: pl.DataFrame) -> pl.DataFrame:
+    """Join channel BTYD per cutoff on ``df``.
+
+    Args:
+        df: Table with user_id and cutoff.
+
+    Returns:
+        Rows plus CHANNEL_BTYD_FEATURES (idempotent).
+
+    Example:
+        train = attach_channel_btyd(concat_train_fit())
+    """
+    if "sbtyd_frequency" in df.columns:
+        return df
+    parts: list[pl.DataFrame] = []
+    for co in df["cutoff"].unique().to_list():
+        part = df.filter(pl.col("cutoff") == co)
+        parts.append(part.join(build_channel_btyd_features(co), on="user_id", how="left"))
+    return pl.concat(parts, how="vertical_relaxed")
+
+
+def build_order_ipi_features(cutoff: date, *, cache: bool = True) -> pl.DataFrame:
+    """Inter-purchase gaps on distinct order days (no densify).
+
+    Args:
+        cutoff: Last history date.
+        cache: ``features_{cutoff}_ordipi_v1.parquet``.
+
+    Returns:
+        ORDER_IPI_FEATURES; missing gaps filled with 9999, n_gaps 0.
+
+    Example:
+        extra = build_order_ipi_features(date(2026, 1, 14))
+    """
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    path = CACHE_DIR / f"features_{cutoff.isoformat()}_ordipi_v1.parquet"
+    if cache and path.exists():
+        return pl.read_parquet(path)
+    lf = pl.scan_parquet(PARQUET_PATH)
+    users = lf.select(pl.col("user_id").unique())
+    ipi = (
+        lf.filter((pl.col("event_date") <= cutoff) & (pl.col("to_ord") > 0))
+        .select("user_id", "event_date")
+        .unique()
+        .sort(["user_id", "event_date"])
+        .with_columns(gap=pl.col("event_date").diff().over("user_id").dt.total_days())
+        .group_by("user_id")
+        .agg(
+            ord_mean_gap=pl.col("gap").mean(),
+            ord_std_gap=pl.col("gap").std(),
+            ord_last_gap=pl.col("gap").drop_nulls().last(),
+            ord_n_gaps=pl.col("gap").drop_nulls().len(),
+        )
+    )
+    df = users.join(ipi, on="user_id", how="left").collect()
+    df = df.with_columns(ord_n_gaps=pl.col("ord_n_gaps").fill_null(0))
+    df = df.with_columns(
+        [pl.col(c).fill_null(9999) for c in ("ord_mean_gap", "ord_std_gap", "ord_last_gap")]
+    )
+    if cache:
+        df.write_parquet(path)
+    return df
+
+
+def attach_order_ipi(df: pl.DataFrame) -> pl.DataFrame:
+    """Join order IPI per cutoff on ``df``.
+
+    Args:
+        df: Table with user_id and cutoff.
+
+    Returns:
+        Rows plus ORDER_IPI_FEATURES (idempotent).
+
+    Example:
+        train = attach_order_ipi(concat_train_fit())
+    """
+    if "ord_mean_gap" in df.columns:
+        return df
+    parts: list[pl.DataFrame] = []
+    for co in df["cutoff"].unique().to_list():
+        part = df.filter(pl.col("cutoff") == co)
+        parts.append(part.join(build_order_ipi_features(co), on="user_id", how="left"))
+    return pl.concat(parts, how="vertical_relaxed")
+
+
+def build_channel_recency_features(cutoff: date, *, cache: bool = True) -> pl.DataFrame:
+    """Days since last search/cat activity and channel order.
+
+    Args:
+        cutoff: Last history date.
+        cache: ``features_{cutoff}_chrec_v1.parquet``.
+
+    Returns:
+        CHANNEL_RECENCY_FEATURES; never-seen filled 9999.
+
+    Example:
+        extra = build_channel_recency_features(date(2026, 1, 14))
+    """
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    path = CACHE_DIR / f"features_{cutoff.isoformat()}_chrec_v1.parquet"
+    if cache and path.exists():
+        return pl.read_parquet(path)
+    lf = pl.scan_parquet(PARQUET_PATH)
+    users = lf.select(pl.col("user_id").unique())
+    rec = (
+        lf.filter(pl.col("event_date") <= cutoff)
+        .group_by("user_id")
+        .agg(
+            last_search=pl.col("event_date").filter(pl.col("search") > 0).max(),
+            last_cat=pl.col("event_date").filter(pl.col("cat") > 0).max(),
+            last_search_ord=pl.col("event_date").filter(pl.col("search_to_ord") > 0).max(),
+            last_cat_ord=pl.col("event_date").filter(pl.col("cat_to_ord") > 0).max(),
+        )
+    )
+    df = users.join(rec, on="user_id", how="left").collect()
+    cutoff_lit = pl.lit(cutoff)
+    df = df.with_columns(
+        recency_search_days=pl.when(pl.col("last_search").is_null())
+        .then(9999)
+        .otherwise((cutoff_lit - pl.col("last_search")).dt.total_days()),
+        recency_cat_days=pl.when(pl.col("last_cat").is_null())
+        .then(9999)
+        .otherwise((cutoff_lit - pl.col("last_cat")).dt.total_days()),
+        recency_search_ord_days=pl.when(pl.col("last_search_ord").is_null())
+        .then(9999)
+        .otherwise((cutoff_lit - pl.col("last_search_ord")).dt.total_days()),
+        recency_cat_ord_days=pl.when(pl.col("last_cat_ord").is_null())
+        .then(9999)
+        .otherwise((cutoff_lit - pl.col("last_cat_ord")).dt.total_days()),
+    ).select("user_id", *CHANNEL_RECENCY_FEATURES)
+    if cache:
+        df.write_parquet(path)
+    return df
+
+
+def attach_channel_recency(df: pl.DataFrame) -> pl.DataFrame:
+    """Join channel recency per cutoff on ``df``.
+
+    Args:
+        df: Table with user_id and cutoff.
+
+    Returns:
+        Rows plus CHANNEL_RECENCY_FEATURES (idempotent).
+
+    Example:
+        train = attach_channel_recency(concat_train_fit())
+    """
+    if "recency_search_days" in df.columns:
+        return df
+    parts: list[pl.DataFrame] = []
+    for co in df["cutoff"].unique().to_list():
+        part = df.filter(pl.col("cutoff") == co)
+        parts.append(part.join(build_channel_recency_features(co), on="user_id", how="left"))
+    return pl.concat(parts, how="vertical_relaxed")
+
+
+def build_recent_ord_features(cutoff: date, *, cache: bool = True) -> pl.DataFrame:
+    """Count of distinct order days in last 30d and 90d.
+
+    Args:
+        cutoff: Last history date.
+        cache: ``features_{cutoff}_rord_v1.parquet``.
+
+    Returns:
+        RECENT_ORD_FEATURES.
+
+    Example:
+        extra = build_recent_ord_features(date(2026, 1, 14))
+    """
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    path = CACHE_DIR / f"features_{cutoff.isoformat()}_rord_v1.parquet"
+    if cache and path.exists():
+        return pl.read_parquet(path)
+    lf = pl.scan_parquet(PARQUET_PATH)
+    users = lf.select(pl.col("user_id").unique())
+    start_30 = cutoff - timedelta(days=29)
+    start_90 = cutoff - timedelta(days=89)
+    cnt = (
+        lf.filter((pl.col("event_date") <= cutoff) & (pl.col("to_ord") > 0))
+        .group_by("user_id")
+        .agg(
+            ord_days_30d=pl.col("event_date").filter(pl.col("event_date") >= start_30).n_unique(),
+            ord_days_90d=pl.col("event_date").filter(pl.col("event_date") >= start_90).n_unique(),
+        )
+    )
+    df = users.join(cnt, on="user_id", how="left").collect()
+    df = df.with_columns(
+        ord_days_30d=pl.col("ord_days_30d").fill_null(0),
+        ord_days_90d=pl.col("ord_days_90d").fill_null(0),
+    ).with_columns(
+        ord_days_ratio_30_90=pl.col("ord_days_30d") / (pl.col("ord_days_90d") + 1.0),
+    )
+    if cache:
+        df.write_parquet(path)
+    return df
+
+
+def attach_recent_ord(df: pl.DataFrame) -> pl.DataFrame:
+    """Join recent order-day counts per cutoff on ``df``.
+
+    Args:
+        df: Table with user_id and cutoff.
+
+    Returns:
+        Rows plus RECENT_ORD_FEATURES (idempotent).
+
+    Example:
+        train = attach_recent_ord(concat_train_fit())
+    """
+    if "ord_days_30d" in df.columns:
+        return df
+    parts: list[pl.DataFrame] = []
+    for co in df["cutoff"].unique().to_list():
+        part = df.filter(pl.col("cutoff") == co)
+        parts.append(part.join(build_recent_ord_features(co), on="user_id", how="left"))
     return pl.concat(parts, how="vertical_relaxed")
 
 

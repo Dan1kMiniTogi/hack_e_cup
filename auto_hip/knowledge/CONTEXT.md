@@ -24,10 +24,10 @@
 
 - Агрегаты/последовательности по пользователю до cutoff → модель 30d GMV → `max(0, pred)` → RMSLE vs сумма `gmv` в окне (нет строки = 0).
 - Эксперименты: код, pred, meta — [`../workspace/`](../workspace/) (`ltv_arms.py`, `ltv_data.py`, `runner.py`). Knowledge-цикл — эта папка.
-- Control: naive last-30d. Champion: H45 `blend_lgb_hgb`, `champion_run: h45_blend` в [`config.yaml`](../config.yaml).
+- Control: naive last-30d. Champion: H52 `lgb_btyd_ipi`, `champion_run: h52_ipi` в [`config.yaml`](../config.yaml).
 
 ## Устойчивые выводы
 
-- Champion **H45** mix 0.5 LGB+HGB на `H26_COLS`: primary 1.696101 / holdout 1.74135. Почти весь выигрыш — H04 (−0.487) и две головы H05 (−0.009); дальше −0.003. Код arms: [`../workspace/ltv_arms.py`](../workspace/ltv_arms.py).
-- 52% SSE на y=0 (mean_pred на нулях ≈8, zero_pred≈0) и mid hist_gmv ≈45% SSE; hurdle/вес нулей/snap/TE не переносятся на holdout. Public ~1.65 — другой split/слой, не leaf.
-- Живые оси: канальная воронка parquet (`search_to_ord` / `cat_to_ord` / `has_*` не в агрегатах) и BTYD как фичи, не refine деревьев. Синтез: [`past/SYNTHESIS.md`](past/SYNTHESIS.md).
+- Champion **H52** `lgb_btyd_ipi`: primary 1.692618 / holdout 1.740169 (−0.0010 vs H48). IPI по дням заказа поверх BTYD. Код: [`../workspace/ltv_arms.py`](../workspace/ltv_arms.py).
+- H48 BTYD обязателен; канальный BTYD/recency и mix HGB на BTYD — нет. Календарь соло ⚠️ holdout. Extra cutoff 8.11 как H22.
+- Дальше: стек IPI с календарём и канальными лагами. Синтез: [`past/SYNTHESIS.md`](past/SYNTHESIS.md).

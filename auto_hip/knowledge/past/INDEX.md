@@ -1,10 +1,10 @@
 # INDEX — scorecard гипотез
 
-**Champion: H45** `blend_lgb_hgb` · primary **1.696101** · holdout **1.74135**. Runner-up H31 LGB.
+**Champion: H52** `lgb_btyd_ipi` · primary **1.692618** · holdout **1.740169**. Предыдущий H48 BTYD 1.693588 / 1.740301.
 
 Синтез линий и cemetery: [`SYNTHESIS.md`](SYNTHESIS.md). Отчёты: [`archive/`](archive/). Аудит H45: [`../analytics/results/004_h45_debug.md`](../analytics/results/004_h45_debug.md).
 
-Почти весь выигрыш — H04 (−0.487 vs naive) и две головы H05 (−0.009). H05→H45: −0.003 суммарно. Refine деревьев на `H26_COLS` исчерпан.
+Почти весь выигрыш — H04 (−0.487) и две головы H05 (−0.009). H48 BTYD −0.0025 vs H45; H52 IPI ещё −0.0010 vs H48. Refine деревьев на голых `H26_COLS` исчерпан.
 
 | id | status | type | primary metrics | vs champion | note |
 |----|--------|------|-----------------|-------------|------|
@@ -53,7 +53,18 @@
 | H42 | ❌ | explore | rmsle 1.69653 | хуже H31, holdout better | burstiness |
 | H43 | ❌ | explore | rmsle 1.69681 | хуже H31 | time weights |
 | H44 | ❌ | refine | rmsle 1.70670 | хуже H31 | isotonic log |
-| H45 | ✅ | explore | rmsle 1.696101 | vs H31 both better | **champion** LGB+HGB mix |
+| H45 | ✅ | explore | rmsle 1.696101 | vs H31 both better | LGB+HGB mix |
 | H46 | ❌ | pivot | rmsle 1.69745 | хуже H31 | XGBoost |
+| H47 | ❌ | explore | rmsle 1.696525 | хуже H45 | funnel windows |
+| H48 | ✅ | pivot | rmsle 1.693588 | vs H45 both better | BTYD-фичи |
+| H49 | ⚠️ | explore | rmsle 1.693343 | holdout 1.740312 worse | calendar 30d |
+| H50 | ✅ | explore | rmsle 1.693554 | vs H48 both, < H52 | nested GMV lags |
+| H51 | ❌ | explore | rmsle 1.694336 | хуже H48 | channel BTYD |
+| H52 | ✅ | explore | rmsle 1.692618 | vs H48 both better | **champion** order IPI |
+| H53 | ✅ | explore | rmsle 1.693417 | vs H48 both, < H52 | channel lags |
+| H54 | ❌ | pivot | rmsle 1.693688 | хуже H48 primary | LGB+HGB на BTYD |
+| H55 | ❌ | explore | rmsle 1.693671 | хуже H48 primary | channel recency |
+| H56 | ❌ | pivot | rmsle 1.694647 | хуже H48 | якорь 2025-11-08 |
+| H57 | ✅ | refine | rmsle 1.693444 | vs H48 both, < H52 | ord days 30/90 |
 
-Легенда status: ✅ принята · ⚠️ кандидат / нужен holdout · ❌ отклонена. Отчёт Hx → [`archive/`](archive/) (`h01_global_scale.md` … `h46_xgboost.md`).
+Легенда status: ✅ принята · ⚠️ кандидат / нужен holdout · ❌ отклонена. Отчёт Hx → [`archive/`](archive/).
