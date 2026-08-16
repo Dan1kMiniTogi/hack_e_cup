@@ -1,6 +1,6 @@
 # Линия: hurdle-logmix и стек H65 (H70–H77)
 
-Champion-path: H65 → **H70** hurdle-logmix c=0 (−0.00131) → **H73** stack 0.30 H65 + 0.70 hurdle (−0.00012) → H78 3-seed. Полный отчёт **H75** остаётся в корне.
+Champion-path: H65 → **H70** hurdle-logmix c=0 (−0.00131) → **H73** stack 0.30 H65 + 0.70 hurdle (−0.00012) → H78 3-seed. H75 свёрнут сюда.
 
 ## Keep
 

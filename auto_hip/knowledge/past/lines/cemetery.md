@@ -23,6 +23,7 @@
 | Logit temperature T<1 | H81 | mean_pred↑ RMSLE↑ both |
 | Channel balance ratios на H78 | H83 | шум / коллинеарность |
 | Multi-depth leaves в hurdle | H86 | primary↑, holdout шум |
+| RECENT_ORD только в μ hurdle | H89 | mid mean_pred не сдвинулся; оба сплита чуть хуже H87 |
 | Naive scale / blend | H02, H10 | вырождение или шум |
 
 ## Микро-тюны (шум, не линия)
@@ -31,4 +32,4 @@ H20 ord_lag · H21 abs loss · H23/H30 leaf · H24 mono · H27 ens+decay · H28 
 
 ## ⚠️ не cemetery, но не champion
 
-H01 global scale · H12 zero-w · H41 RFM TE · H49/H58 calendar · H63 rord · H74 knn-на-hurdle · H75 соло-3seed · H79 веса 0.15/0.85 · H80 intent-в-μ · H82/H84 mixed CB · H85 log-blend.
+H01 global scale · H12 zero-w · H41 RFM TE · H49/H58 calendar · H63 rord сквозной · H74 knn-на-hurdle · H75 соло-3seed · H79 веса 0.15/0.85 · H80 intent-в-μ · H82/H84/H88/H90 mixed CB · H85 log-blend.

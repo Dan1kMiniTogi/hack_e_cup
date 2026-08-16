@@ -7,7 +7,7 @@
 1. [`INDEX.md`](INDEX.md) — полный scorecard (читай первым).
 2. [`SYNTHESIS.md`](SYNTHESIS.md) — путь метрики, cemetery, дыры champion.
 3. [`lines/`](lines/) — свёртка старых эпох (H00–H46+) и [`lines/cemetery.md`](lines/cemetery.md).
-4. В корне `past/` — **активное окно ~10** полных отчётов (`hxx_slug.md`). Сейчас: H65, H75, H78–H80, H82, H84–H87.
+4. В корне `past/` — **активное окно ~10** полных отчётов (`hxx_slug.md`). Сейчас: H80, H82, H84–H91.
 
 ## Правило окна (~10)
 

@@ -40,9 +40,9 @@ acceptance:
 
 baselines:
   control: naive_autoregressive
-champion: stack_h65_hurdle3_clf_intent
-champion_run: h87_clf_intent
-champion_arm: stack_h65_hurdle3_clf_intent
+champion: stack_h87_soft_temp
+champion_run: h91_soft_temp
+champion_arm: stack_h87_soft_temp
 
 
 banned_lines:

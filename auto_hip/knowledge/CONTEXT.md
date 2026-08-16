@@ -24,10 +24,10 @@
 
 - Агрегаты/последовательности по пользователю до cutoff → модель 30d GMV → `max(0, pred)` → RMSLE vs сумма `gmv` в окне (нет строки = 0).
 - Эксперименты: код, pred, meta — [`../workspace/`](../workspace/) (`ltv_arms.py`, `ltv_data.py`, `runner.py`). Knowledge-цикл — эта папка.
-- Control: naive last-30d. Champion: H87 `stack_h65_hurdle3_clf_intent`, `champion_run: h87_clf_intent` в [`config.yaml`](../config.yaml).
+- Control: naive last-30d. Champion: H91 `stack_h87_soft_temp`, `champion_run: h91_soft_temp` в [`config.yaml`](../config.yaml).
 
 ## Устойчивые выводы
 
-- Champion **H87** `stack_h65_hurdle3_clf_intent`: primary **1.689383** / holdout **1.738805**. Сабмит: `workspace/submit_87.csv`.
-- H84 4-bag ⚠️ лучший holdout цикла 1.738575, primary чуть хуже; H85 blend ⚠️; H86 multi-depth ❌.
-- Дальше: 4-bag на H87 и rord только в μ; не intent в μ, не T<1, не веса стека.
+- Champion **H91** `stack_h87_soft_temp`: primary **1.688156** / holdout **1.738581**. Сабмит: `workspace/submit_91.csv`.
+- H88/H90 4-bag CB ⚠️ лучший holdout 1.738551, primary хуже H87; H89 rord-in-μ ❌ (mid не сдвинулся).
+- Дальше: 4-bag/mixed-3 CB уже на T=1.05; не rord-in-μ, не T<1, не веса стека, не intent в μ.

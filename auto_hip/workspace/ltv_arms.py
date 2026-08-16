@@ -2462,6 +2462,84 @@ def fit_arm(name: str, train_df: pl.DataFrame, q50: float, q90: float) -> ArmMod
                 "cols": cols,
             },
         )
+    if name == "stack_h91_hurdle4_temp":
+        from ltv_data import INTENT_DYNAMICS_FEATURES
+
+        work, params = _prepare_h65_stack(train_df, need_intent=True)
+        cols = _h65_feature_cols()
+        clf_cols = _h65_feature_cols(INTENT_DYNAMICS_FEATURES)
+        extra_kw = {
+            "extra_params": {
+                "min_data_in_leaf": 60,
+                "feature_fraction": 0.8,
+                "lambda_l2": 3.0,
+            }
+        }
+        members = [
+            _fit_lgb_channel(work, cols, seed, **extra_kw) for seed in (42, 7, 99)
+        ]
+        hurdle_members = [
+            _fit_hurdle_logmix_c0(work, cols, seed=s, clf_cols=clf_cols)
+            for s in (42, 43, 44)
+        ]
+        hurdle_members.append(
+            _fit_catboost_hurdle_member(work, cols, seed=45, clf_cols=clf_cols)
+        )
+        hurdle = {
+            "members": hurdle_members,
+            "cols": cols,
+            "temperature": 1.05,
+        }
+        return ArmModel(
+            "stack_blend_hurdle3",
+            {
+                "blend_members": members,
+                "hurdle": hurdle,
+                "blend_w": 0.30,
+                "hurdle_w": 0.70,
+                "need_btyd": True,
+                "bgnbd": params,
+                "need_ipi": True,
+                "need_ch_lags": True,
+                "need_intent": True,
+                "cols": cols,
+            },
+        )
+    if name == "stack_h91_mixed3_temp":
+        from ltv_data import INTENT_DYNAMICS_FEATURES
+
+        work, params = _prepare_h65_stack(train_df, need_intent=True)
+        cols = _h65_feature_cols()
+        clf_cols = _h65_feature_cols(INTENT_DYNAMICS_FEATURES)
+        extra_kw = {
+            "extra_params": {
+                "min_data_in_leaf": 60,
+                "feature_fraction": 0.8,
+                "lambda_l2": 3.0,
+            }
+        }
+        members = [
+            _fit_lgb_channel(work, cols, seed, **extra_kw) for seed in (42, 7, 99)
+        ]
+        hurdle = _fit_hurdle_logmix_mixed(
+            work, cols, seeds_lgb=(42, 43), seed_cb=44, clf_cols=clf_cols
+        )
+        hurdle["temperature"] = 1.05
+        return ArmModel(
+            "stack_blend_hurdle3",
+            {
+                "blend_members": members,
+                "hurdle": hurdle,
+                "blend_w": 0.30,
+                "hurdle_w": 0.70,
+                "need_btyd": True,
+                "bgnbd": params,
+                "need_ipi": True,
+                "need_ch_lags": True,
+                "need_intent": True,
+                "cols": cols,
+            },
+        )
     raise ValueError(name)
 
 

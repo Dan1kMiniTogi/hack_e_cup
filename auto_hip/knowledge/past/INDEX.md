@@ -1,10 +1,10 @@
 # INDEX — scorecard гипотез
 
-**Champion: H87** `stack_h65_hurdle3_clf_intent` · primary **1.689383** · holdout **1.738805**. Предыдущий H78 1.689400 / 1.738825.
+**Champion: H91** `stack_h87_soft_temp` · primary **1.688156** · holdout **1.738581**. Предыдущий H87 1.689383 / 1.738805.
 
-Синтез: [`SYNTHESIS.md`](SYNTHESIS.md). Линии: [`lines/`](lines/). Активные отчёты (**10**): H65, H75, H78–H80, H82, H84–H87. H47–H64/H66–H77/H81/H83 — [`lines/`](lines/).
+Синтез: [`SYNTHESIS.md`](SYNTHESIS.md). Линии: [`lines/`](lines/). Активные отчёты (**10**): H80, H82, H84–H91. H47–H79/H81/H83 — [`lines/`](lines/).
 
-Почти весь выигрыш — H04 (−0.487) и две головы H05 (−0.009). H48→H59→H65→H70 hurdle; H73 stack 0.30/0.70; **H78** hurdle 3-seed; **H87** intent только в clf (−0.000017 / −0.000020 vs H78).
+Почти весь выигрыш — H04 (−0.487) и две головы H05 (−0.009). H48→H59→H65→H70 hurdle; H73 stack; H78 3-seed; H87 clf-intent; **H91** T=1.05 (−0.001227 / −0.000224 vs H87).
 
 | id | status | type | primary metrics | vs champion | note |
 |----|--------|------|-----------------|-------------|------|
@@ -95,6 +95,10 @@
 | H84 | ⚠️ | explore | rmsle 1.689420 | holdout **1.738575** better | 3 LGB + 1 CB hurdle |
 | H85 | ⚠️ | pivot | rmsle 1.689415 | holdout better, primary worse | log-blend H78⊕H82 |
 | H86 | ❌ | explore | rmsle 1.689650 | хуже H78 primary | multi-depth 31/63/95 |
-| H87 | ✅ | pivot | rmsle 1.689383 | vs H78 both better | **champion** intent только в clf |
+| H87 | ✅ | pivot | rmsle 1.689383 | vs H78 both better | prev champ intent только в clf |
+| H88 | ⚠️ | explore | rmsle 1.689445 | holdout **1.738558** better | 4-bag CB на H87; primary хуже |
+| H89 | ❌ | pivot | rmsle 1.689425 | хуже H87 both | rord только в μ; mid не сдвинулся |
+| H90 | ⚠️ | explore | rmsle 1.689457 | holdout **1.738551** better | dual routing+CB; primary хуже |
+| H91 | ✅ | refine | rmsle 1.688156 | vs H87 both better | **champion** T=1.05 на p |
 
 Легенда status: ✅ принята · ⚠️ кандидат / нужен holdout · ❌ отклонена. Полный отчёт Hx → корень `past/` (окно **10**) или свёртка в [`lines/`](lines/).
