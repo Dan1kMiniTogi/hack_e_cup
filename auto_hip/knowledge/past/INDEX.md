@@ -1,10 +1,10 @@
 # INDEX — scorecard гипотез
 
-**Champion: H65** `lgb_h59_reg` · primary **1.691493** · holdout **1.739622**. Предыдущий H59 IPI+chlag 1.691937 / 1.739946.
+**Champion: H70** `hurdle_logmix_c0` · primary **1.690181** · holdout **1.739575**. Предыдущий H65 reg 1.691493 / 1.739622.
 
-Синтез: [`SYNTHESIS.md`](SYNTHESIS.md). Линии: [`lines/`](lines/). Активные отчёты (~15): `h51_*.md`…`h67_*.md` в корне. Аудит H45: [`../analytics/results/004_h45_debug.md`](../analytics/results/004_h45_debug.md).
+Синтез: [`SYNTHESIS.md`](SYNTHESIS.md). Линии: [`lines/`](lines/). Активные отчёты (~15): `h58_*.md`…`h72_*.md` в корне. Аудит H45: [`../analytics/results/004_h45_debug.md`](../analytics/results/004_h45_debug.md).
 
-Почти весь выигрыш — H04 (−0.487) и две головы H05 (−0.009). H48 BTYD −0.0025 vs H45; H52 IPI −0.0010 vs H48; H59 IPI+chlag −0.0007 vs H52; H65 reg −0.00044 vs H59.
+Почти весь выигрыш — H04 (−0.487) и две головы H05 (−0.009). H48 BTYD −0.0025 vs H45; H52 IPI −0.0010 vs H48; H59 IPI+chlag −0.0007 vs H52; H65 reg −0.00044 vs H59; **H70 hurdle-logmix c=0 −0.00131 vs H65**.
 
 | id | status | type | primary metrics | vs champion | note |
 |----|--------|------|-----------------|-------------|------|
@@ -73,8 +73,13 @@
 | H62 | ❌ | explore | rmsle 1.692303 | хуже H59 both | H59 + nested lags |
 | H63 | ⚠️ | refine | rmsle 1.692294 | holdout better, primary worse | H59 + rord |
 | H64 | ❌ | explore | rmsle 1.692401 | хуже H59 both | H59 + cart conv |
-| H65 | ✅ | refine | rmsle 1.691493 | vs H59 both better | **champion** H59 reg |
+| H65 | ✅ | refine | rmsle 1.691493 | vs H59 both better | H59 reg (prev champ) |
 | H66 | ❌ | explore | rmsle 1.692314 | хуже H59 both | H59 + joint lags/rord |
 | H67 | ✅ | pivot | rmsle 1.691867 | vs H59 both better | H59+HGB blend |
+| H68 | ❌ | explore | rmsle 1.691886 | хуже H65 both | v3+funnel2 на H65 |
+| H69 | ❌ | explore | rmsle 1.691916 | хуже H65 both | RFM cohortknn на H65 |
+| H70 | ✅ | pivot | rmsle 1.690181 | vs H65 both better | **champion** hurdle-logmix c=0 |
+| H71 | ❌ | refine | rmsle 1.691743 | хуже H70/H65 | dual-capacity 47/95 |
+| H72 | ❌ | explore | rmsle 1.690623 | хуже H70; primary лучше H65 | 0.70 dual+0.30 hurdle |
 
 Легенда status: ✅ принята · ⚠️ кандидат / нужен holdout · ❌ отклонена. Полный отчёт Hx → корень `past/` (окно ~15) или свёртка в [`lines/`](lines/).

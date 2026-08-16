@@ -616,6 +616,29 @@ CHANNEL_RECENCY_FEATURES = [
     "recency_cat_ord_days",
 ]
 RECENT_ORD_FEATURES = ["ord_days_30d", "ord_days_90d", "ord_days_ratio_30_90"]
+V3_FUNNEL2_FEATURES = [
+    "gap_ratio",
+    "gmv_vs_plat_7d",
+    "gmv_vs_plat_30d",
+    "gmv_vs_plat_90d",
+    "aov_search_30d",
+    "aov_cat_30d",
+    "abandoned_search_cart_30d",
+    "conv_search_30d",
+    "conv_cat_30d",
+    "conv_ratio_30_90",
+    "conv_channel_gap_30d",
+]
+COHORTKNN_FEATURES = [
+    "cohort_id",
+    "cohort_gmv_mean",
+    "cohort_gmv_median",
+    "user_vs_cohort_gmv",
+    "knn_gmv_mean",
+    "knn_gmv_p90",
+    "knn_rich_share",
+    "acq_week",
+]
 
 
 def calendar_features_for_cutoff(cutoff: date) -> dict[str, float]:
@@ -1044,6 +1067,244 @@ def attach_recent_ord(df: pl.DataFrame) -> pl.DataFrame:
         part = df.filter(pl.col("cutoff") == co)
         parts.append(part.join(build_recent_ord_features(co), on="user_id", how="left"))
     return pl.concat(parts, how="vertical_relaxed")
+
+
+def add_v3_funnel2_features(df: pl.DataFrame) -> pl.DataFrame:
+    """Gap phase, platform-relative GMV, channel AOV and conversion ratios.
+
+    Builds V3_FUNNEL2_FEATURES from window/gap columns already on ``df`` plus
+    funnel sums (attaches funnel per cutoff if missing). Platform means are
+    computed within each cutoff batch (no labels).
+
+    Args:
+        df: Cutoff table with gmv_sum_*, last_gap/mean_gap, and ideally funnel.
+
+    Returns:
+        Same rows plus V3_FUNNEL2_FEATURES (idempotent if ``gap_ratio`` present).
+
+    Example:
+        train = add_v3_funnel2_features(attach_order_ipi(concat_train_fit()))
+    """
+    if "gap_ratio" in df.columns:
+        return df
+    work = attach_funnel(df) if "search_to_ord_sum_30d" not in df.columns else df
+    parts: list[pl.DataFrame] = []
+    eps = 1e-5
+    for co in work["cutoff"].unique().to_list():
+        part = work.filter(pl.col("cutoff") == co)
+        plat7 = float(part["gmv_sum_7d"].mean())
+        plat30 = float(part["gmv_sum_30d"].mean())
+        plat90 = float(part["gmv_sum_90d"].mean())
+        part = part.with_columns(
+            gap_ratio=pl.col("last_gap").fill_null(9999)
+            / (pl.col("mean_gap").fill_null(9999) + eps),
+            gmv_vs_plat_7d=pl.col("gmv_sum_7d") / (plat7 + eps),
+            gmv_vs_plat_30d=pl.col("gmv_sum_30d") / (plat30 + eps),
+            gmv_vs_plat_90d=pl.col("gmv_sum_90d") / (plat90 + eps),
+            aov_search_30d=pl.col("gmv_search_sum_30d")
+            / (pl.col("search_to_ord_sum_30d") + 1.0),
+            aov_cat_30d=pl.col("gmv_cat_sum_30d") / (pl.col("cat_to_ord_sum_30d") + 1.0),
+            abandoned_search_cart_30d=pl.max_horizontal(
+                pl.col("search_to_cart_sum_30d") - pl.col("search_to_ord_sum_30d"),
+                pl.lit(0.0),
+            ),
+            conv_search_30d=(pl.col("search_to_ord_sum_30d") + 1.0)
+            / (pl.col("searches_sum_30d") + 2.0),
+            conv_cat_30d=(pl.col("cat_to_ord_sum_30d") + 1.0)
+            / (pl.col("cat_to_cart_sum_30d") + pl.col("cat_to_ord_sum_30d") + 2.0),
+            conv_total_30d=(pl.col("to_ord_sum_30d") + 1.0)
+            / (pl.col("searches_sum_30d") + 2.0),
+            conv_total_90d=(pl.col("to_ord_sum_90d") + 1.0)
+            / (pl.col("searches_sum_90d") + 2.0),
+        ).with_columns(
+            conv_ratio_30_90=pl.col("conv_total_30d") / (pl.col("conv_total_90d") + eps),
+            conv_channel_gap_30d=pl.col("conv_search_30d") - pl.col("conv_cat_30d"),
+        ).drop(["conv_total_30d", "conv_total_90d"])
+        parts.append(part)
+    return pl.concat(parts, how="vertical_relaxed")
+
+
+def build_cohortknn_features(cutoff: date, *, cache: bool = True) -> pl.DataFrame:
+    """RFM MiniBatchKMeans(k=8) + kNN(k=20) peer stats from history ≤ cutoff.
+
+    Peer GMV uses window ``gmv`` sum over last 30d (history), never the label.
+    Builds a lean RFM table via one parquet scan (no full feature join).
+    kNN index is fit on a random subsample (≤50k) and queried in batches.
+
+    Args:
+        cutoff: Last date allowed in features.
+        cache: ``features_{cutoff}_cohortknn_v1.parquet``.
+
+    Returns:
+        One row per user_id with COHORTKNN_FEATURES.
+
+    Example:
+        knn = build_cohortknn_features(date(2026, 1, 14))
+    """
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    path = CACHE_DIR / f"features_{cutoff.isoformat()}_cohortknn_v1.parquet"
+    if cache and path.exists():
+        return pl.read_parquet(path)
+
+    from sklearn.cluster import MiniBatchKMeans
+    from sklearn.neighbors import NearestNeighbors
+    from sklearn.preprocessing import StandardScaler
+
+    origin = date(2025, 1, 1)
+    start_30 = cutoff - timedelta(days=29)
+    start_90 = cutoff - timedelta(days=89)
+    lf = pl.scan_parquet(PARQUET_PATH)
+    users = lf.select(pl.col("user_id").unique())
+    hist = lf.filter(pl.col("event_date") <= cutoff)
+    rfm = (
+        hist.group_by("user_id")
+        .agg(
+            first_date=pl.col("event_date").min(),
+            last_date=pl.col("event_date").max(),
+            gmv_sum_30d=pl.col("gmv")
+            .filter(pl.col("event_date") >= start_30)
+            .sum(),
+            gmv_search_sum_30d=pl.col("gmv_search")
+            .filter(pl.col("event_date") >= start_30)
+            .sum(),
+            to_ord_sum_90d=pl.col("to_ord")
+            .filter(pl.col("event_date") >= start_90)
+            .sum(),
+        )
+        .with_columns(
+            acq_week=((pl.col("first_date") - pl.lit(origin)).dt.total_days() / 7.0).clip(
+                0, 80
+            ),
+            rfm_recency=(pl.lit(cutoff) - pl.col("last_date")).dt.total_days(),
+        )
+    )
+    work = users.join(rfm, on="user_id", how="left").collect()
+    work = work.with_columns(
+        [
+            pl.col(c).fill_null(0.0)
+            for c in (
+                "acq_week",
+                "gmv_sum_30d",
+                "gmv_search_sum_30d",
+                "to_ord_sum_90d",
+            )
+        ]
+    ).with_columns(
+        rfm_recency=pl.col("rfm_recency").fill_null(9999).cast(pl.Float64),
+        rfm_freq90=pl.col("to_ord_sum_90d").cast(pl.Float64),
+        rfm_money30=pl.col("gmv_sum_30d").cast(pl.Float64),
+        rfm_search_share=pl.col("gmv_search_sum_30d") / (pl.col("gmv_sum_30d") + 1.0),
+        acq_week=pl.col("acq_week").cast(pl.Float64),
+    )
+
+    rfm_cols = ["rfm_recency", "rfm_freq90", "rfm_money30", "rfm_search_share", "acq_week"]
+    X = work.select(rfm_cols).to_numpy().astype(np.float32)
+    X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+    gmv30 = work["gmv_sum_30d"].to_numpy().astype(np.float32)
+    user_ids = work["user_id"].to_numpy()
+    acq = work["acq_week"].to_numpy().astype(np.float32)
+    del work
+    n = int(X.shape[0])
+    if n < 32:
+        out = pl.DataFrame(
+            {
+                "user_id": user_ids,
+                "cohort_id": np.full(n, -1, dtype=np.int32),
+                "cohort_gmv_mean": np.zeros(n, dtype=np.float64),
+                "cohort_gmv_median": np.zeros(n, dtype=np.float64),
+                "user_vs_cohort_gmv": np.ones(n, dtype=np.float64),
+                "knn_gmv_mean": np.zeros(n, dtype=np.float64),
+                "knn_gmv_p90": np.zeros(n, dtype=np.float64),
+                "knn_rich_share": np.zeros(n, dtype=np.float64),
+                "acq_week": acq.astype(np.float64),
+            }
+        )
+        if cache:
+            out.write_parquet(path)
+        return out
+
+    scaler = StandardScaler()
+    Xs = scaler.fit_transform(X).astype(np.float32)
+    del X
+    k_clusters = int(min(8, max(2, n // 1000)))
+    km = MiniBatchKMeans(
+        n_clusters=k_clusters, batch_size=min(2048, n), random_state=42, n_init=3
+    )
+    labels = km.fit_predict(Xs).astype(np.int32)
+    del km
+    cohort_mean = np.zeros(k_clusters, dtype=np.float64)
+    cohort_med = np.zeros(k_clusters, dtype=np.float64)
+    for c in range(k_clusters):
+        mask = labels == c
+        if mask.any():
+            cohort_mean[c] = float(gmv30[mask].mean())
+            cohort_med[c] = float(np.median(gmv30[mask]))
+    c_mean = cohort_mean[labels]
+    c_med = cohort_med[labels]
+    user_vs = gmv30.astype(np.float64) / (c_med + 1e-5)
+
+    rng = np.random.default_rng(42)
+    index_size = int(min(n, 50_000))
+    index_idx = rng.choice(n, size=index_size, replace=False)
+    k_nn = int(min(21, index_size))
+    nn = NearestNeighbors(n_neighbors=k_nn, algorithm="kd_tree", metric="euclidean")
+    nn.fit(Xs[index_idx])
+    gmv_p90 = float(np.quantile(gmv30, 0.9)) if n else 0.0
+    knn_mean = np.zeros(n, dtype=np.float64)
+    knn_p90 = np.zeros(n, dtype=np.float64)
+    knn_rich = np.zeros(n, dtype=np.float64)
+    batch = 10_000
+    index_gmv = gmv30[index_idx]
+    for start in range(0, n, batch):
+        end = min(start + batch, n)
+        neigh_local = nn.kneighbors(Xs[start:end], return_distance=False)
+        use = neigh_local[:, 1:] if neigh_local.shape[1] > 1 else neigh_local
+        use = use[:, :20]
+        neigh_gmv = index_gmv[use].astype(np.float64)
+        knn_mean[start:end] = neigh_gmv.mean(axis=1)
+        knn_p90[start:end] = np.quantile(neigh_gmv, 0.9, axis=1)
+        knn_rich[start:end] = (neigh_gmv > gmv_p90).mean(axis=1)
+    del nn, Xs
+
+    out = pl.DataFrame(
+        {
+            "user_id": user_ids,
+            "cohort_id": labels,
+            "cohort_gmv_mean": c_mean,
+            "cohort_gmv_median": c_med,
+            "user_vs_cohort_gmv": user_vs,
+            "knn_gmv_mean": knn_mean,
+            "knn_gmv_p90": knn_p90,
+            "knn_rich_share": knn_rich,
+            "acq_week": acq.astype(np.float64),
+        }
+    )
+    if cache:
+        out.write_parquet(path)
+    return out
+
+
+def attach_cohortknn(df: pl.DataFrame) -> pl.DataFrame:
+    """Left-join cohortknn_v1 features per cutoff on ``df``.
+
+    Args:
+        df: Table with user_id and cutoff.
+
+    Returns:
+        Same rows plus COHORTKNN_FEATURES (idempotent).
+
+    Example:
+        train = attach_cohortknn(concat_train_fit())
+    """
+    if "knn_gmv_mean" in df.columns:
+        return df
+    parts: list[pl.DataFrame] = []
+    for co in df["cutoff"].unique().to_list():
+        part = df.filter(pl.col("cutoff") == co)
+        parts.append(part.join(build_cohortknn_features(co), on="user_id", how="left"))
+    out = pl.concat(parts, how="vertical_relaxed")
+    fill = [c for c in COHORTKNN_FEATURES if c in out.columns]
+    return out.with_columns([pl.col(c).fill_null(0) for c in fill])
 
 
 def load_named(name: str) -> pl.DataFrame:

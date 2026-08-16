@@ -19,6 +19,8 @@ data/*.parquet
 
 # auto_hip workspace runs / модели / кэш агрегатов
 auto_hip/workspace/runs/
+auto_hip/workspace/cache/
+auto_hip/workspace/catboost_info/
 auto_hip/workspace/**/*.pkl
 auto_hip/workspace/**/*.joblib
 auto_hip/workspace/**/*.parquet

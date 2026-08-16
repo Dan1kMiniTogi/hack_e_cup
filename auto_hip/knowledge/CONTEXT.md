@@ -24,10 +24,10 @@
 
 - Агрегаты/последовательности по пользователю до cutoff → модель 30d GMV → `max(0, pred)` → RMSLE vs сумма `gmv` в окне (нет строки = 0).
 - Эксперименты: код, pred, meta — [`../workspace/`](../workspace/) (`ltv_arms.py`, `ltv_data.py`, `runner.py`). Knowledge-цикл — эта папка.
-- Control: naive last-30d. Champion: H59 `lgb_ipi_chlag`, `champion_run: h59_ipi_chlag` в [`config.yaml`](../config.yaml).
+- Control: naive last-30d. Champion: H70 `hurdle_logmix_c0`, `champion_run: h70_hurdle_c0` в [`config.yaml`](../config.yaml).
 
 ## Устойчивые выводы
 
-- Champion **H65** `lgb_h59_reg`: primary 1.691493 / holdout 1.739622 (−0.00044 vs H59). Регуляризация листьев и feature_fraction на стеке IPI+chlag. Код: [`../workspace/ltv_arms.py`](../workspace/ltv_arms.py).
-- H67 blend (LGB+HGB log-space) также побил H59 на обоих сплитах (1.691867 / 1.739769).
-- Дублирование лагов (H62), cart conversion (H64) и joint lags (H66) на H59 ведут к регрессии без регуляризации. Синтез: [`past/SYNTHESIS.md`](past/SYNTHESIS.md).
+- Champion **H70** `hurdle_logmix_c0`: primary **1.690181** / holdout **1.739575** (−0.00131 / −0.00005 vs H65). Сборка \(\mathrm{expm1}(p\log(1+\mu))\), c=0; фичи H65. Код: [`../workspace/ltv_arms.py`](../workspace/ltv_arms.py).
+- v3/funnel2 (H68), cohortknn (H69) и dual-capacity (H71) на чистом H65 не помогли; стек 0.70 dual+0.30 hurdle (H72) хуже соло-hurdle.
+- Предыдущий H65 reg: 1.691493 / 1.739622. Синтез: [`past/SYNTHESIS.md`](past/SYNTHESIS.md).

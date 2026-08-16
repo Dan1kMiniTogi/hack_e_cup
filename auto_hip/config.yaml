@@ -40,9 +40,10 @@ acceptance:
 
 baselines:
   control: naive_autoregressive
-champion: lgb_h59_reg
-champion_run: h65_reg
-champion_arm: lgb_h59_reg
+champion: hurdle_logmix_c0
+champion_run: h70_hurdle_c0
+champion_arm: hurdle_logmix_c0
+
 
 banned_lines:
   - hurdle_zero_positive

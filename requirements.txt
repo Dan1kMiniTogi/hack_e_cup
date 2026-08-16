@@ -1,0 +1,10 @@
+# Runtime for auto_hip/workspace runner and analytics scripts.
+# Install: pip install -r requirements.txt
+numpy==1.26.4
+polars==1.43.2
+scikit-learn==1.7.2
+lightgbm==4.6.0
+catboost==1.2.8
+xgboost==3.1.2
+PyYAML==6.0.3
+pyarrow==21.0.0

@@ -1,8 +1,8 @@
-# SYNTHESIS — H00–H67
+# SYNTHESIS — H00–H72
 
-Champion: **H65** `lgb_h59_reg`, primary RMSLE **1.691493**, holdout **1.739622**. Предыдущий H59 1.691937 / 1.739946.
+Champion: **H70** `hurdle_logmix_c0`, primary RMSLE **1.690181**, holdout **1.739575**. Предыдущий H65 1.691493 / 1.739622.
 
-Scorecard — [`INDEX.md`](INDEX.md). Линии — [`lines/`](lines/). Активное окно (~15 отчётов) — `h51_*.md` … `h67_*.md` в корне. Cemetery — [`lines/cemetery.md`](lines/cemetery.md).
+Scorecard — [`INDEX.md`](INDEX.md). Линии — [`lines/`](lines/). Активное окно (~15 отчётов) — `h58_*.md` … `h72_*.md` в корне. Cemetery — [`lines/cemetery.md`](lines/cemetery.md).
 
 ## Что реально сдвинуло метрику
 
@@ -15,10 +15,11 @@ Scorecard — [`INDEX.md`](INDEX.md). Линии — [`lines/`](lines/). Акт�
 | H48 → H52 | **−0.0010** | IPI между днями заказа. |
 | H52 → H59 | **−0.0007** | IPI + disjoint 30d лаги search/cat/to_ord. |
 | H59 → H65 | **−0.00044** | Регуляризация (min_data_in_leaf 60, feature_fraction 0.8, L2 3.0) на широком признаковом стеке. |
+| H65 → H70 | **−0.00131** | Hurdle-logmix c=0: \(\mathrm{expm1}(p\log(1+\mu))\), не p×μ. |
 
-mean_pred ≈ 45 при mean_true 84 / 101 — не баг для RMSLE: post-hoc scale (H60) и `log1p(y+ε)` (H61) ломают метрику.
+mean_pred ≈ 45–46 при mean_true 84 / 101 — не баг для RMSLE: post-hoc scale (H60) и `log1p(y+ε)` (H61) ломают метрику.
 
-mean_pred ≈ 45 при mean_true 84 / 101 — не баг для RMSLE: post-hoc scale (H60) и `log1p(y+ε)` (H61) ломают метрику.
+Friend-transfer H68/H69 (v3funnel, cohortknn) на соло-H65 ❌; dual (H71) и 0.70/0.30 stack (H72) хуже чистого hurdle.
 
 ## Линии (навигация)
 
@@ -35,9 +36,9 @@ mean_pred ≈ 45 при mean_true 84 / 101 — не баг для RMSLE: post-ho
 
 Полный список — [`lines/cemetery.md`](lines/cemetery.md).
 
-## Дыры H59
+## Дыры H70
 
-1. mid ~1.878 всё ещё худший срез; y=0 держит массу SSE.
-2. Календарь не стекуется с IPI на holdout (H49/H58).
-3. Nested total-GMV лаги (H50) со стеком H59 не проверены.
-4. Public ~1.65 — другой split; офлайн шаг после H52 микро.
+1. mid hist_gmv всё ещё ~1.878; hurdle чуть улучшил zero/low, mid почти как у H65.
+2. Holdout выигрыш H70 тонкий (−0.00005) — нужен public check / submit.
+3. cohortknn и v3funnel не стекуются на log1p-H65; пробовать на hurdle-базе.
+4. Dual 0.70 в стеке вреден — refine веса в сторону hurdle или заменить dual на H65 3-seed.
