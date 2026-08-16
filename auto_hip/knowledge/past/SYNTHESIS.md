@@ -1,8 +1,8 @@
 # SYNTHESIS — H00–H72
 
-Champion: **H78** `stack_h65_hurdle3seed`, primary RMSLE **1.689400**, holdout **1.738825**. Предыдущий H73 1.690065 / 1.739049.
+Champion: **H87** `stack_h65_hurdle3_clf_intent`, primary RMSLE **1.689383**, holdout **1.738805**. Предыдущий H78 1.689400 / 1.738825.
 
-Scorecard — [`INDEX.md`](INDEX.md). Линии — [`lines/`](lines/). Активное окно (~15 отчётов) — `h65_*.md` … `h79_*.md` в корне. Cemetery — [`lines/cemetery.md`](lines/cemetery.md).
+Scorecard — [`INDEX.md`](INDEX.md). Линии — [`lines/`](lines/). Активное окно (~15 отчётов) — `h74_*.md` … `h87_*.md` в корне. Cemetery — [`lines/cemetery.md`](lines/cemetery.md).
 
 ## Что реально сдвинуло метрику
 
@@ -18,14 +18,15 @@ Scorecard — [`INDEX.md`](INDEX.md). Линии — [`lines/`](lines/). Акт�
 | H65 → H70 | **−0.00131** | Hurdle-logmix c=0. |
 | H70 → H73 | **−0.00012** | Stack 0.30 H65 + 0.70 hurdle (holdout −0.00053). |
 | H73 → H78 | **−0.00067** | Тот же стек, hurdle → 3-seed bagging (holdout −0.00022). |
+| H78 → H87 | **−0.000017** | Intent dynamics только в clf P(y>0), не в μ. |
 
-H79 веса 0.15/0.85 ⚠️ vs H78. H80 intent в стеке ⚠️ (шум). H81 T=0.9 ❌. H82 mixed LGB+CB ⚠️ **лучший holdout 1.738559**. H83 chbal ❌. Public LB H65 ≈ 1.6619 — грузить `submit_78.csv`.
+H79 веса 0.15/0.85 ⚠️. H82 mixed ⚠️ holdout **1.738559**. H84 4-bag ⚠️ holdout 1.738575. H86 multi-depth ❌. **H87 ✅ champion**. Public LB H65 ≈ 1.6619 — грузить `submit_87.csv`.
 
-## Дыры H78
+## Дыры H87
 
 1. mid hist_gmv всё ещё тяжёлый.
-2. Веса стека исчерпаны (стоп refine весов).
-3. H82 holdout-сигнал без primary — склейка 3LGB+CB или blend H78⊕H82.
+2. Holdout H84 (−0.00025) не забран — 4-bag на clf-intent.
+3. Веса стека исчерпаны; T<1 и intent-в-μ cemetery.
 
 ## Линии (навигация)
 
@@ -35,6 +36,7 @@ H79 веса 0.15/0.85 ⚠️ vs H78. H80 intent в стеке ⚠️ (шум). 
 | [`lines/02_hgb_features.md`](lines/02_hgb_features.md) | H06–H19 |
 | [`lines/03_ensemble_to_lgb.md`](lines/03_ensemble_to_lgb.md) | H20–H46 |
 | [`lines/04_btyd_ipi.md`](lines/04_btyd_ipi.md) | H47–H61 (+ дыры H59) |
+| [`lines/05_hurdle_stack.md`](lines/05_hurdle_stack.md) | H70–H73 |
 
 ## Cemetery (сводка)
 

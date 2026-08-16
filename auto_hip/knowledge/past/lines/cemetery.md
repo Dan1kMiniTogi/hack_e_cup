@@ -22,6 +22,7 @@
 | Dual-channel независимый hurdle | H76 | хуже единого P(y>0) |
 | Logit temperature T<1 | H81 | mean_pred↑ RMSLE↑ both |
 | Channel balance ratios на H78 | H83 | шум / коллинеарность |
+| Multi-depth leaves в hurdle | H86 | primary↑, holdout шум |
 | Naive scale / blend | H02, H10 | вырождение или шум |
 
 ## Микро-тюны (шум, не линия)

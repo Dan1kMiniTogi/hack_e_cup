@@ -2,7 +2,7 @@
 
 **Дата / split:** local_val_cutoff_2026-01-14
 **Опорный run:** `workspace/runs/h78_stack_h3` (champ) + `workspace/runs/h82_mixed`
-**Статус:** open
+**Статус:** answered
 
 ## Вопрос
 
@@ -31,4 +31,4 @@ $T < 1$ на логитах · dual-channel hurdle · сетка весов ст
 
 ## Следующий шаг
 
-Прогнать гипотезы 084–087 на связке Primary + Holdout; чемпион на текущий момент — H78.
+084–087 прогнаны; чемпион **H87**. Очередь → [`011_h87_next.md`](011_h87_next.md).

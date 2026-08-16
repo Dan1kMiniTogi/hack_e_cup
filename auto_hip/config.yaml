@@ -40,9 +40,9 @@ acceptance:
 
 baselines:
   control: naive_autoregressive
-champion: stack_h65_hurdle3seed
-champion_run: h78_stack_h3
-champion_arm: stack_h65_hurdle3seed
+champion: stack_h65_hurdle3_clf_intent
+champion_run: h87_clf_intent
+champion_arm: stack_h65_hurdle3_clf_intent
 
 
 banned_lines:

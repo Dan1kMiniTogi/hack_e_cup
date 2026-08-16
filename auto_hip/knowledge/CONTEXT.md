@@ -24,10 +24,10 @@
 
 - Агрегаты/последовательности по пользователю до cutoff → модель 30d GMV → `max(0, pred)` → RMSLE vs сумма `gmv` в окне (нет строки = 0).
 - Эксперименты: код, pred, meta — [`../workspace/`](../workspace/) (`ltv_arms.py`, `ltv_data.py`, `runner.py`). Knowledge-цикл — эта папка.
-- Control: naive last-30d. Champion: H78 `stack_h65_hurdle3seed`, `champion_run: h78_stack_h3` в [`config.yaml`](../config.yaml).
+- Control: naive last-30d. Champion: H87 `stack_h65_hurdle3_clf_intent`, `champion_run: h87_clf_intent` в [`config.yaml`](../config.yaml).
 
 ## Устойчивые выводы
 
-- Champion **H78** `stack_h65_hurdle3seed`: primary **1.689400** / holdout **1.738825**. Сабмит: `workspace/submit_78.csv`.
-- H80–H83: intent/T=0.9/chbal не бьют H78; **H82 mixed LGB+CB** дал лучший holdout **1.738559** при primary 1.689586 ⚠️.
-- Следующее: 4-member hurdle (3 LGB + CB) или фиксированный blend H78⊕H82; не T<1 и не веса стека.
+- Champion **H87** `stack_h65_hurdle3_clf_intent`: primary **1.689383** / holdout **1.738805**. Сабмит: `workspace/submit_87.csv`.
+- H84 4-bag ⚠️ лучший holdout цикла 1.738575, primary чуть хуже; H85 blend ⚠️; H86 multi-depth ❌.
+- Дальше: 4-bag на H87 и rord только в μ; не intent в μ, не T<1, не веса стека.

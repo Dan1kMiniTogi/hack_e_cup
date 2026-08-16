@@ -1,10 +1,10 @@
 # INDEX — scorecard гипотез
 
-**Champion: H78** `stack_h65_hurdle3seed` · primary **1.689400** · holdout **1.738825**. Предыдущий H73 1.690065 / 1.739049.
+**Champion: H87** `stack_h65_hurdle3_clf_intent` · primary **1.689383** · holdout **1.738805**. Предыдущий H78 1.689400 / 1.738825.
 
-Синтез: [`SYNTHESIS.md`](SYNTHESIS.md). Линии: [`lines/`](lines/). Активные отчёты (~15): `h70_*.md`…`h83_*.md` в корне. Аудит H45: [`../analytics/results/004_h45_debug.md`](../analytics/results/004_h45_debug.md).
+Синтез: [`SYNTHESIS.md`](SYNTHESIS.md). Линии: [`lines/`](lines/). Активные отчёты (~15): `h74_*.md`…`h87_*.md` в корне. H70–H73 свёрнуты в [`lines/05_hurdle_stack.md`](lines/05_hurdle_stack.md).
 
-Почти весь выигрыш — H04 (−0.487) и две головы H05 (−0.009). H48→H59→H65→H70 hurdle; H73 stack 0.30/0.70; **H78 = H73 + hurdle 3-seed (−0.00067 / −0.00022 vs H73)**.
+Почти весь выигрыш — H04 (−0.487) и две головы H05 (−0.009). H48→H59→H65→H70 hurdle; H73 stack 0.30/0.70; **H78** hurdle 3-seed; **H87** intent только в clf (−0.000017 / −0.000020 vs H78).
 
 | id | status | type | primary metrics | vs champion | note |
 |----|--------|------|-----------------|-------------|------|
@@ -92,5 +92,9 @@
 | H81 | ❌ | pivot | rmsle 1.692937 | хуже H78 both | logit T=0.9 |
 | H82 | ⚠️ | explore | rmsle 1.689586 | holdout **1.738559** better | LGB+CB mixed hurdle |
 | H83 | ❌ | refine | rmsle 1.689551 | primary worse | channel balance |
+| H84 | ⚠️ | explore | rmsle 1.689420 | holdout **1.738575** better | 3 LGB + 1 CB hurdle |
+| H85 | ⚠️ | pivot | rmsle 1.689415 | holdout better, primary worse | log-blend H78⊕H82 |
+| H86 | ❌ | explore | rmsle 1.689650 | хуже H78 primary | multi-depth 31/63/95 |
+| H87 | ✅ | pivot | rmsle 1.689383 | vs H78 both better | **champion** intent только в clf |
 
 Легенда status: ✅ принята · ⚠️ кандидат / нужен holdout · ❌ отклонена. Полный отчёт Hx → корень `past/` (окно ~15) или свёртка в [`lines/`](lines/).
