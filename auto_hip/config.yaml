@@ -40,9 +40,9 @@ acceptance:
 
 baselines:
   control: naive_autoregressive
-champion: hurdle_logmix_c0
-champion_run: h70_hurdle_c0
-champion_arm: hurdle_logmix_c0
+champion: stack_h65_hurdle3seed
+champion_run: h78_stack_h3
+champion_arm: stack_h65_hurdle3seed
 
 
 banned_lines:
@@ -52,7 +52,7 @@ banned_lines:
 
 preflight:
   reminders:
-    - Данные только data/train.parquet; не читать файл целиком в чат/контекст.
+    - Данные только data/train.parquet; не читать файл целиком в чат/контекст. Нет файла — python scripts/download_dataset.py.
     - Не материализовать dense calendar (нули по всем дням) — ряд разреженный.
     - Метрика RMSLE с log1p; predict = max(0, pred); формат сабмита user_id,predict на всех user_id.
     - Код и артефакты прогонов — auto_hip/workspace/; knowledge/ — только отчёты и очередь.

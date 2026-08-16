@@ -10,7 +10,12 @@
 pip install -r requirements.txt
 ```
 
-2. Положи датасет соревнования в `data/train.parquet` (~172 MB).  
+2. Скачай датасет соревнования в `data/train.parquet` (~172 MB):
+
+```bash
+python scripts/download_dataset.py
+```
+
    Описание колонок и формата сабмита — [`data/README.md`](data/README.md).  
    Файл **не** в git (лимит GitHub / размер). Без него `runner.py` и analytics не стартуют.
 

@@ -24,10 +24,10 @@
 
 - Агрегаты/последовательности по пользователю до cutoff → модель 30d GMV → `max(0, pred)` → RMSLE vs сумма `gmv` в окне (нет строки = 0).
 - Эксперименты: код, pred, meta — [`../workspace/`](../workspace/) (`ltv_arms.py`, `ltv_data.py`, `runner.py`). Knowledge-цикл — эта папка.
-- Control: naive last-30d. Champion: H70 `hurdle_logmix_c0`, `champion_run: h70_hurdle_c0` в [`config.yaml`](../config.yaml).
+- Control: naive last-30d. Champion: H78 `stack_h65_hurdle3seed`, `champion_run: h78_stack_h3` в [`config.yaml`](../config.yaml).
 
 ## Устойчивые выводы
 
-- Champion **H70** `hurdle_logmix_c0`: primary **1.690181** / holdout **1.739575** (−0.00131 / −0.00005 vs H65). Сборка \(\mathrm{expm1}(p\log(1+\mu))\), c=0; фичи H65. Код: [`../workspace/ltv_arms.py`](../workspace/ltv_arms.py).
-- v3/funnel2 (H68), cohortknn (H69) и dual-capacity (H71) на чистом H65 не помогли; стек 0.70 dual+0.30 hurdle (H72) хуже соло-hurdle.
-- Предыдущий H65 reg: 1.691493 / 1.739622. Синтез: [`past/SYNTHESIS.md`](past/SYNTHESIS.md).
+- Champion **H78** `stack_h65_hurdle3seed`: primary **1.689400** / holdout **1.738825** (−0.00067 / −0.00022 vs H73). Сабмит: `workspace/submit_78.csv`.
+- H79 0.15/0.85: primary лучше H78, holdout хуже → ⚠️. H76 dual-channel ❌; knn/intent/3seed-solo без стека — holdout-риск.
+- Public LB H65 ≈ 1.6619 при офлайн ~1.691 — офлайн пессимистичен; грузить H78.

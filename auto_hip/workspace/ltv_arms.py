@@ -583,14 +583,16 @@ def _prepare_h65_stack(
     *,
     need_v3funnel: bool = False,
     need_cohortknn: bool = False,
+    need_intent: bool = False,
 ) -> tuple[pl.DataFrame, dict[str, float]]:
-    """Attach BTYD + IPI + channel lags (+ optional v3/knn) for H65-family arms.
+    """Attach BTYD + IPI + channel lags (+ optional v3/knn/intent) for H65-family arms.
 
     Args:
         df: Cutoff table.
         params: BG/NBD params from fit; estimated if None.
         need_v3funnel: Add V3_FUNNEL2_FEATURES.
         need_cohortknn: Join COHORTKNN_FEATURES.
+        need_intent: Add INTENT_DYNAMICS_FEATURES.
 
     Returns:
         (annotated df, bgnbd params).
@@ -602,6 +604,7 @@ def _prepare_h65_stack(
         add_v3_funnel2_features,
         attach_channel_lags,
         attach_cohortknn,
+        attach_intent_dynamics,
         attach_order_ipi,
     )
 
@@ -611,6 +614,8 @@ def _prepare_h65_stack(
         work = add_v3_funnel2_features(work)
     if need_cohortknn:
         work = attach_cohortknn(work)
+    if need_intent:
+        work = attach_intent_dynamics(work)
     return work, params
 
 
@@ -681,6 +686,136 @@ def _pred_hurdle_logmix_c0(payload: dict[str, Any], work: pl.DataFrame) -> np.nd
     p_pos = np.clip(p_pos, 0.0, 1.0)
     mu = _pred_two_log_heads(payload["reg_s"], payload["reg_c"], xs)
     return _clip(np.expm1(p_pos * np.log1p(np.clip(mu, 0, None))))
+
+
+def _fit_hurdle_logmix_3seed(
+    train_df: pl.DataFrame, cols: list[str], seeds: tuple[int, ...] = (42, 43, 44)
+) -> dict[str, Any]:
+    """Bag of hurdle-logmix c=0 models over multiple seeds.
+
+    Args:
+        train_df: Labeled fit rows with features attached.
+        cols: Feature columns.
+        seeds: Booster seeds for each member.
+
+    Returns:
+        Payload with ``members`` list of single-seed hurdle payloads.
+
+    Example:
+        payload = _fit_hurdle_logmix_3seed(work, cols)
+    """
+    return {
+        "members": [_fit_hurdle_logmix_c0(train_df, cols, seed=s) for s in seeds],
+        "cols": cols,
+    }
+
+
+def _pred_hurdle_logmix_3seed(payload: dict[str, Any], work: pl.DataFrame) -> np.ndarray:
+    """Average p and mu across seeds, then assemble expm1(p * log1p(mu)).
+
+    Args:
+        payload: From ``_fit_hurdle_logmix_3seed``.
+        work: Feature table.
+
+    Returns:
+        Non-negative GMV predictions.
+
+    Example:
+        pred = _pred_hurdle_logmix_3seed(payload, eval_work)
+    """
+    xs = _X(work, payload["cols"])
+    p_acc = None
+    mu_acc = None
+    n = len(payload["members"])
+    for mem in payload["members"]:
+        p_pos = np.clip(mem["clf"].predict(xs), 0.0, 1.0)
+        mu = _pred_two_log_heads(mem["reg_s"], mem["reg_c"], xs)
+        p_acc = p_pos if p_acc is None else p_acc + p_pos
+        mu_acc = mu if mu_acc is None else mu_acc + mu
+    p_mean = p_acc / n
+    mu_mean = mu_acc / n
+    return _clip(np.expm1(p_mean * np.log1p(np.clip(mu_mean, 0, None))))
+
+
+def _fit_dual_channel_hurdle(
+    train_df: pl.DataFrame, cols: list[str], *, seed: int = 42
+) -> dict[str, Any]:
+    """Independent search/catalog hurdle-logmix heads with c=0.
+
+    Args:
+        train_df: Labeled fit rows with features attached.
+        cols: Feature columns.
+        seed: Shared LGB seed for all four boosters.
+
+    Returns:
+        Payload with clf_s/reg_s and clf_c/reg_c.
+
+    Example:
+        payload = _fit_dual_channel_hurdle(work, cols)
+    """
+    import lightgbm as lgb
+
+    X = _X(train_df, cols)
+    clf_params = {
+        **LGB_PARAMS,
+        "objective": "binary",
+        "metric": "binary_logloss",
+        "seed": seed,
+        "feature_fraction_seed": seed,
+        "bagging_seed": seed,
+        "min_data_in_leaf": 60,
+        "feature_fraction": 0.8,
+        "lambda_l2": 3.0,
+    }
+    y_s = train_df["y_search"].to_numpy()
+    y_c = train_df["y_cat"].to_numpy()
+    dclf_s = lgb.Dataset(
+        X, label=(y_s > 0).astype(np.int32), feature_name=cols, free_raw_data=False
+    )
+    dclf_c = lgb.Dataset(
+        X, label=(y_c > 0).astype(np.int32), feature_name=cols, free_raw_data=False
+    )
+    clf_s = lgb.train(clf_params, dclf_s, num_boost_round=LGB_ROUNDS)
+    clf_c = lgb.train(clf_params, dclf_c, num_boost_round=LGB_ROUNDS)
+    reg_kw = {
+        "extra_params": {
+            "min_data_in_leaf": 60,
+            "feature_fraction": 0.8,
+            "lambda_l2": 3.0,
+        }
+    }
+    pos_s = train_df.filter(pl.col("y_search") > 0)
+    pos_c = train_df.filter(pl.col("y_cat") > 0)
+    return {
+        "clf_s": clf_s,
+        "clf_c": clf_c,
+        "reg_s": _fit_lgb_head(pos_s, cols, "y_search", seed, **reg_kw),
+        "reg_c": _fit_lgb_head(pos_c, cols, "y_cat", seed, **reg_kw),
+        "cols": cols,
+    }
+
+
+def _pred_dual_channel_hurdle(payload: dict[str, Any], work: pl.DataFrame) -> np.ndarray:
+    """Sum of per-channel expm1(p * log1p(mu)) assemblies.
+
+    Args:
+        payload: From ``_fit_dual_channel_hurdle``.
+        work: Feature table.
+
+    Returns:
+        Non-negative total GMV predictions.
+
+    Example:
+        pred = _pred_dual_channel_hurdle(payload, eval_work)
+    """
+    xs = _X(work, payload["cols"])
+    p_s = np.clip(payload["clf_s"].predict(xs), 0.0, 1.0)
+    p_c = np.clip(payload["clf_c"].predict(xs), 0.0, 1.0)
+    mu_s = np.expm1(np.clip(payload["reg_s"].predict(xs), -1, 20))
+    mu_c = np.expm1(np.clip(payload["reg_c"].predict(xs), -1, 20))
+    pred_s = np.expm1(p_s * np.log1p(np.clip(mu_s, 0, None)))
+    pred_c = np.expm1(p_c * np.log1p(np.clip(mu_c, 0, None)))
+    return _clip(pred_s) + _clip(pred_c)
 
 
 def fit_arm(name: str, train_df: pl.DataFrame, q50: float, q90: float) -> ArmModel:
@@ -1651,6 +1786,80 @@ def fit_arm(name: str, train_df: pl.DataFrame, q50: float, q90: float) -> ArmMod
                 "cols": cols,
             },
         )
+    if name == "hurdle_logmix_3seed":
+        work, params = _prepare_h65_stack(train_df)
+        cols = _h65_feature_cols()
+        payload = _fit_hurdle_logmix_3seed(work, cols, seeds=(42, 43, 44))
+        return ArmModel(
+            "hurdle_logmix_3seed",
+            {
+                **payload,
+                "need_btyd": True,
+                "bgnbd": params,
+                "need_ipi": True,
+                "need_ch_lags": True,
+            },
+        )
+    if name == "dual_channel_hurdle":
+        work, params = _prepare_h65_stack(train_df)
+        cols = _h65_feature_cols()
+        payload = _fit_dual_channel_hurdle(work, cols, seed=42)
+        return ArmModel(
+            "dual_channel_hurdle",
+            {
+                **payload,
+                "need_btyd": True,
+                "bgnbd": params,
+                "need_ipi": True,
+                "need_ch_lags": True,
+            },
+        )
+    if name == "hurdle_intent_dynamics":
+        from ltv_data import INTENT_DYNAMICS_FEATURES
+
+        work, params = _prepare_h65_stack(train_df, need_intent=True)
+        cols = _h65_feature_cols(INTENT_DYNAMICS_FEATURES)
+        payload = _fit_hurdle_logmix_c0(work, cols, seed=42)
+        return ArmModel(
+            "hurdle_logmix_c0",
+            {
+                **payload,
+                "need_btyd": True,
+                "bgnbd": params,
+                "need_ipi": True,
+                "need_ch_lags": True,
+                "need_intent": True,
+            },
+        )
+    if name in ("stack_h65_hurdle3seed", "stack_h65_hurdle3seed_w85"):
+        work, params = _prepare_h65_stack(train_df)
+        cols = _h65_feature_cols()
+        extra_kw = {
+            "extra_params": {
+                "min_data_in_leaf": 60,
+                "feature_fraction": 0.8,
+                "lambda_l2": 3.0,
+            }
+        }
+        members = [
+            _fit_lgb_channel(work, cols, seed, **extra_kw) for seed in (42, 7, 99)
+        ]
+        hurdle = _fit_hurdle_logmix_3seed(work, cols, seeds=(42, 43, 44))
+        blend_w, hurdle_w = (0.15, 0.85) if name.endswith("_w85") else (0.30, 0.70)
+        return ArmModel(
+            "stack_blend_hurdle3",
+            {
+                "blend_members": members,
+                "hurdle": hurdle,
+                "blend_w": blend_w,
+                "hurdle_w": hurdle_w,
+                "need_btyd": True,
+                "bgnbd": params,
+                "need_ipi": True,
+                "need_ch_lags": True,
+                "cols": cols,
+            },
+        )
     raise ValueError(name)
 
 
@@ -1784,14 +1993,34 @@ def predict_arm(model: ArmModel, eval_df: pl.DataFrame) -> np.ndarray:
             p.get("bgnbd"),
             need_v3funnel=bool(p.get("need_v3funnel")),
             need_cohortknn=bool(p.get("need_cohortknn")),
+            need_intent=bool(p.get("need_intent")),
         )
         return _pred_hurdle_logmix_c0(p, work)
+    if name == "hurdle_logmix_3seed":
+        work, _ = _prepare_h65_stack(
+            eval_df,
+            p.get("bgnbd"),
+            need_v3funnel=bool(p.get("need_v3funnel")),
+            need_cohortknn=bool(p.get("need_cohortknn")),
+            need_intent=bool(p.get("need_intent")),
+        )
+        return _pred_hurdle_logmix_3seed(p, work)
+    if name == "dual_channel_hurdle":
+        work, _ = _prepare_h65_stack(
+            eval_df,
+            p.get("bgnbd"),
+            need_v3funnel=bool(p.get("need_v3funnel")),
+            need_cohortknn=bool(p.get("need_cohortknn")),
+            need_intent=bool(p.get("need_intent")),
+        )
+        return _pred_dual_channel_hurdle(p, work)
     if name == "stack_blend_hurdle":
         work, _ = _prepare_h65_stack(
             eval_df,
             p.get("bgnbd"),
             need_v3funnel=bool(p.get("need_v3funnel")),
             need_cohortknn=bool(p.get("need_cohortknn")),
+            need_intent=bool(p.get("need_intent")),
         )
         acc = None
         for mem in p["blend_members"]:
@@ -1801,6 +2030,23 @@ def predict_arm(model: ArmModel, eval_df: pl.DataFrame) -> np.ndarray:
         hurdle = _pred_hurdle_logmix_c0(p["hurdle"], work)
         w_b = float(p.get("blend_w", 0.70))
         w_h = float(p.get("hurdle_w", 0.30))
+        return _clip(w_b * blend + w_h * hurdle)
+    if name == "stack_blend_hurdle3":
+        work, _ = _prepare_h65_stack(
+            eval_df,
+            p.get("bgnbd"),
+            need_v3funnel=bool(p.get("need_v3funnel")),
+            need_cohortknn=bool(p.get("need_cohortknn")),
+            need_intent=bool(p.get("need_intent")),
+        )
+        acc = None
+        for mem in p["blend_members"]:
+            part = _pred_two_log_heads(mem["reg_s"], mem["reg_c"], _X(work, mem["cols"]))
+            acc = part if acc is None else acc + part
+        blend = acc / len(p["blend_members"])
+        hurdle = _pred_hurdle_logmix_3seed(p["hurdle"], work)
+        w_b = float(p.get("blend_w", 0.30))
+        w_h = float(p.get("hurdle_w", 0.70))
         return _clip(w_b * blend + w_h * hurdle)
     if name == "lgb_ipi_bucket_c":
         pred = predict_arm(ArmModel("lgb_channel_ens", p), eval_df)

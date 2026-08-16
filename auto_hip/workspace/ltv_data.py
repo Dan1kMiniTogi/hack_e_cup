@@ -639,6 +639,45 @@ COHORTKNN_FEATURES = [
     "knn_rich_share",
     "acq_week",
 ]
+INTENT_DYNAMICS_FEATURES = [
+    "search_accel_7_30",
+    "cart_ord_conv_30d",
+    "hot_cart_no_ord_7d",
+    "search_vs_cat_shift",
+]
+
+
+def attach_intent_dynamics(df: pl.DataFrame) -> pl.DataFrame:
+    """Add intent/cart dynamics features from existing window sums (idempotent).
+
+    Args:
+        df: Cutoff table with searches/to_cart/to_ord/gmv channel windows.
+
+    Returns:
+        Same rows plus INTENT_DYNAMICS_FEATURES.
+
+    Example:
+        work = attach_intent_dynamics(load_named("primary"))
+    """
+    if "search_accel_7_30" in df.columns:
+        return df
+    return df.with_columns(
+        search_accel_7_30=pl.col("searches_sum_7d")
+        / (pl.col("searches_sum_30d") / 4.0 + 1.0),
+        cart_ord_conv_30d=pl.col("to_ord_sum_30d")
+        / (pl.col("to_cart_sum_30d") + 1.0),
+        hot_cart_no_ord_7d=(
+            (pl.col("to_cart_sum_7d") > 0) & (pl.col("to_ord_sum_7d") == 0)
+        ).cast(pl.Float64),
+        search_vs_cat_shift=(
+            pl.col("gmv_search_sum_14d")
+            / (pl.col("gmv_search_sum_14d") + pl.col("gmv_cat_sum_14d") + 1.0)
+        )
+        - (
+            pl.col("gmv_search_sum_90d")
+            / (pl.col("gmv_search_sum_90d") + pl.col("gmv_cat_sum_90d") + 1.0)
+        ),
+    )
 
 
 def calendar_features_for_cutoff(cutoff: date) -> dict[str, float]:

@@ -19,6 +19,7 @@
 | Extra cutoff / time weights | H22, H43, H56 | не закрыли RMSLE |
 | Calendar как промоут | H49, H58 | holdout fail |
 | Funnel / channel-BTYD / channel-recency | H47, H51, H55 | хуже H48-стека |
+| Dual-channel независимый hurdle | H76 | хуже единого P(y>0) |
 | Naive scale / blend | H02, H10 | вырождение или шум |
 
 ## Микро-тюны (шум, не линия)

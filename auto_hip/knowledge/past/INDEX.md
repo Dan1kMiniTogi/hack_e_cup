@@ -1,10 +1,10 @@
 # INDEX — scorecard гипотез
 
-**Champion: H70** `hurdle_logmix_c0` · primary **1.690181** · holdout **1.739575**. Предыдущий H65 reg 1.691493 / 1.739622.
+**Champion: H78** `stack_h65_hurdle3seed` · primary **1.689400** · holdout **1.738825**. Предыдущий H73 1.690065 / 1.739049.
 
-Синтез: [`SYNTHESIS.md`](SYNTHESIS.md). Линии: [`lines/`](lines/). Активные отчёты (~15): `h58_*.md`…`h72_*.md` в корне. Аудит H45: [`../analytics/results/004_h45_debug.md`](../analytics/results/004_h45_debug.md).
+Синтез: [`SYNTHESIS.md`](SYNTHESIS.md). Линии: [`lines/`](lines/). Активные отчёты (~15): `h65_*.md`…`h79_*.md` в корне. Аудит H45: [`../analytics/results/004_h45_debug.md`](../analytics/results/004_h45_debug.md).
 
-Почти весь выигрыш — H04 (−0.487) и две головы H05 (−0.009). H48 BTYD −0.0025 vs H45; H52 IPI −0.0010 vs H48; H59 IPI+chlag −0.0007 vs H52; H65 reg −0.00044 vs H59; **H70 hurdle-logmix c=0 −0.00131 vs H65**.
+Почти весь выигрыш — H04 (−0.487) и две головы H05 (−0.009). H48→H59→H65→H70 hurdle; H73 stack 0.30/0.70; **H78 = H73 + hurdle 3-seed (−0.00067 / −0.00022 vs H73)**.
 
 | id | status | type | primary metrics | vs champion | note |
 |----|--------|------|-----------------|-------------|------|
@@ -78,8 +78,15 @@
 | H67 | ✅ | pivot | rmsle 1.691867 | vs H59 both better | H59+HGB blend |
 | H68 | ❌ | explore | rmsle 1.691886 | хуже H65 both | v3+funnel2 на H65 |
 | H69 | ❌ | explore | rmsle 1.691916 | хуже H65 both | RFM cohortknn на H65 |
-| H70 | ✅ | pivot | rmsle 1.690181 | vs H65 both better | **champion** hurdle-logmix c=0 |
+| H70 | ✅ | pivot | rmsle 1.690181 | vs H65 both better | prev champ hurdle-logmix c=0 |
 | H71 | ❌ | refine | rmsle 1.691743 | хуже H70/H65 | dual-capacity 47/95 |
 | H72 | ❌ | explore | rmsle 1.690623 | хуже H70; primary лучше H65 | 0.70 dual+0.30 hurdle |
+| H73 | ✅ | refine | rmsle 1.690065 | vs H70 both better | **champion** 0.30 H65+0.70 hurdle |
+| H74 | ⚠️ | explore | rmsle 1.689840 | holdout 1.739585 worse | knn на hurdle |
+| H75 | ⚠️ | refine | rmsle 1.689143 | holdout vs H73 worse | 3-seed hurdle; best solo primary |
+| H76 | ❌ | pivot | rmsle 1.690824 | хуже H73 both | dual-channel hurdle |
+| H77 | ⚠️ | explore | rmsle 1.689251 | holdout worse | intent dynamics |
+| H78 | ✅ | refine | rmsle 1.689400 | vs H73 both better | **champion** 0.30 H65+0.70 hurdle3 |
+| H79 | ⚠️ | explore | rmsle 1.689218 | holdout vs H78 worse | 0.15/0.85; primary↑ holdout↓ |
 
 Легенда status: ✅ принята · ⚠️ кандидат / нужен holdout · ❌ отклонена. Полный отчёт Hx → корень `past/` (окно ~15) или свёртка в [`lines/`](lines/).

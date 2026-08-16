@@ -1,8 +1,8 @@
 # SYNTHESIS — H00–H72
 
-Champion: **H70** `hurdle_logmix_c0`, primary RMSLE **1.690181**, holdout **1.739575**. Предыдущий H65 1.691493 / 1.739622.
+Champion: **H78** `stack_h65_hurdle3seed`, primary RMSLE **1.689400**, holdout **1.738825**. Предыдущий H73 1.690065 / 1.739049.
 
-Scorecard — [`INDEX.md`](INDEX.md). Линии — [`lines/`](lines/). Активное окно (~15 отчётов) — `h58_*.md` … `h72_*.md` в корне. Cemetery — [`lines/cemetery.md`](lines/cemetery.md).
+Scorecard — [`INDEX.md`](INDEX.md). Линии — [`lines/`](lines/). Активное окно (~15 отчётов) — `h65_*.md` … `h79_*.md` в корне. Cemetery — [`lines/cemetery.md`](lines/cemetery.md).
 
 ## Что реально сдвинуло метрику
 
@@ -14,12 +14,18 @@ Scorecard — [`INDEX.md`](INDEX.md). Линии — [`lines/`](lines/). Акт�
 | H45 → H48 | **−0.0025** | BTYD RFM/AOV как фичи. |
 | H48 → H52 | **−0.0010** | IPI между днями заказа. |
 | H52 → H59 | **−0.0007** | IPI + disjoint 30d лаги search/cat/to_ord. |
-| H59 → H65 | **−0.00044** | Регуляризация (min_data_in_leaf 60, feature_fraction 0.8, L2 3.0) на широком признаковом стеке. |
-| H65 → H70 | **−0.00131** | Hurdle-logmix c=0: \(\mathrm{expm1}(p\log(1+\mu))\), не p×μ. |
+| H59 → H65 | **−0.00044** | Регуляризация на широком признаковом стеке. |
+| H65 → H70 | **−0.00131** | Hurdle-logmix c=0. |
+| H70 → H73 | **−0.00012** | Stack 0.30 H65 + 0.70 hurdle (holdout −0.00053). |
+| H73 → H78 | **−0.00067** | Тот же стек, hurdle → 3-seed bagging (holdout −0.00022). |
 
-mean_pred ≈ 45–46 при mean_true 84 / 101 — не баг для RMSLE: post-hoc scale (H60) и `log1p(y+ε)` (H61) ломают метрику.
+H79 веса 0.15/0.85 ⚠️ vs H78. H76 dual-channel ❌. Public LB H65 ≈ 1.6619 при offline ~1.691 — грузить `submit_78.csv`.
 
-Friend-transfer H68/H69 (v3funnel, cohortknn) на соло-H65 ❌; dual (H71) и 0.70/0.30 stack (H72) хуже чистого hurdle.
+## Дыры H78
+
+1. mid hist_gmv всё ещё тяжёлый.
+2. Веса стека исчерпаны (стоп refine весов).
+3. Intent/knn дают primary без holdout — только внутри H78-стека.
 
 ## Линии (навигация)
 
