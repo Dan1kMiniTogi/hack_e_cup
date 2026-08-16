@@ -1,6 +1,6 @@
 # Cemetery — мёртвые линии (не повторять без нового механизма)
 
-Компактный список. Детали эпох — [`01_foundation.md`](01_foundation.md) … [`04_btyd_ipi.md`](04_btyd_ipi.md). Scorecard — [`../INDEX.md`](../INDEX.md).
+Компактный список. Детали эпох — [`01_foundation.md`](01_foundation.md) … [`07_h78_window.md`](07_h78_window.md). Scorecard — [`../INDEX.md`](../INDEX.md).
 
 ## Запрещённые / провальные оси
 
@@ -31,4 +31,4 @@ H20 ord_lag · H21 abs loss · H23/H30 leaf · H24 mono · H27 ens+decay · H28 
 
 ## ⚠️ не cemetery, но не champion
 
-H01 global scale · H12 zero-w · H41 RFM TE · H49/H58 calendar — primary без holdout-промоута.
+H01 global scale · H12 zero-w · H41 RFM TE · H49/H58 calendar · H63 rord · H74 knn-на-hurdle · H75 соло-3seed · H79 веса 0.15/0.85 · H80 intent-в-μ · H82/H84 mixed CB · H85 log-blend.

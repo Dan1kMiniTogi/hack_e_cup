@@ -584,8 +584,9 @@ def _prepare_h65_stack(
     need_v3funnel: bool = False,
     need_cohortknn: bool = False,
     need_intent: bool = False,
+    need_rord: bool = False,
 ) -> tuple[pl.DataFrame, dict[str, float]]:
-    """Attach BTYD + IPI + channel lags (+ optional v3/knn/intent) for H65-family arms.
+    """Attach BTYD + IPI + channel lags (+ optional v3/knn/intent/rord) for H65-family arms.
 
     Args:
         df: Cutoff table.
@@ -593,12 +594,13 @@ def _prepare_h65_stack(
         need_v3funnel: Add V3_FUNNEL2_FEATURES.
         need_cohortknn: Join COHORTKNN_FEATURES.
         need_intent: Add INTENT_DYNAMICS_FEATURES.
+        need_rord: Add RECENT_ORD_FEATURES.
 
     Returns:
         (annotated df, bgnbd params).
 
     Example:
-        work, params = _prepare_h65_stack(train, need_v3funnel=True)
+        work, params = _prepare_h65_stack(train, need_intent=True, need_rord=True)
     """
     from ltv_data import (
         add_v3_funnel2_features,
@@ -606,6 +608,7 @@ def _prepare_h65_stack(
         attach_cohortknn,
         attach_intent_dynamics,
         attach_order_ipi,
+        attach_recent_ord,
     )
 
     work, params = _prepare_btyd(df, params)
@@ -616,6 +619,8 @@ def _prepare_h65_stack(
         work = attach_cohortknn(work)
     if need_intent:
         work = attach_intent_dynamics(work)
+    if need_rord:
+        work = attach_recent_ord(work)
     return work, params
 
 
@@ -722,24 +727,30 @@ def _fit_hurdle_logmix_3seed(
 
 
 def _fit_catboost_hurdle_member(
-    train_df: pl.DataFrame, cols: list[str], *, seed: int = 44
+    train_df: pl.DataFrame,
+    cols: list[str],
+    *,
+    seed: int = 44,
+    clf_cols: list[str] | None = None,
 ) -> dict[str, Any]:
     """One CatBoost hurdle member: binary clf + two log1p channel regressors on y>0.
 
     Args:
         train_df: Labeled fit rows with features attached.
-        cols: Feature columns.
+        cols: Feature columns for regressors.
         seed: CatBoost random_seed.
+        clf_cols: Optional separate feature columns for the binary classifier.
 
     Returns:
-        Payload with clf, reg_s, reg_c, cols (same shape as LGB hurdle member).
+        Payload with clf, reg_s, reg_c, cols, clf_cols (same shape as LGB hurdle member).
 
     Example:
-        mem = _fit_catboost_hurdle_member(work, cols, seed=44)
+        mem = _fit_catboost_hurdle_member(work, cols, seed=44, clf_cols=clf_cols)
     """
     from catboost import CatBoostClassifier, CatBoostRegressor
 
-    xs = _X(train_df, cols)
+    use_clf_cols = list(clf_cols) if clf_cols is not None else cols
+    xs_clf = _X(train_df, use_clf_cols)
     y = train_df["y"].to_numpy()
     clf = CatBoostClassifier(
         loss_function="Logloss",
@@ -751,7 +762,7 @@ def _fit_catboost_hurdle_member(
         verbose=0,
         thread_count=10,
     )
-    clf.fit(xs, (y > 0).astype(np.int32))
+    clf.fit(xs_clf, (y > 0).astype(np.int32))
     pos = train_df.filter(pl.col("y") > 0)
     xs_pos = _X(pos, cols)
     kw = dict(
@@ -768,7 +779,7 @@ def _fit_catboost_hurdle_member(
     reg_c = CatBoostRegressor(**kw)
     reg_s.fit(xs_pos, np.log1p(np.clip(pos["y_search"].to_numpy(), 0, None)))
     reg_c.fit(xs_pos, np.log1p(np.clip(pos["y_cat"].to_numpy(), 0, None)))
-    return {"clf": clf, "reg_s": reg_s, "reg_c": reg_c, "cols": cols}
+    return {"clf": clf, "reg_s": reg_s, "reg_c": reg_c, "cols": cols, "clf_cols": use_clf_cols}
 
 
 def _fit_hurdle_logmix_mixed(
@@ -777,23 +788,25 @@ def _fit_hurdle_logmix_mixed(
     *,
     seeds_lgb: tuple[int, ...] = (42, 43),
     seed_cb: int = 44,
+    clf_cols: list[str] | None = None,
 ) -> dict[str, Any]:
     """Heterogeneous hurdle bag: LightGBM seeds + one CatBoost member.
 
     Args:
         train_df: Labeled fit rows with features attached.
-        cols: Feature columns.
+        cols: Feature columns for regressors.
         seeds_lgb: Seeds for LGB hurdle members.
         seed_cb: Seed for CatBoost member.
+        clf_cols: Optional separate feature columns for the binary classifier.
 
     Returns:
         Payload compatible with ``_pred_hurdle_logmix_3seed`` (members list).
 
     Example:
-        payload = _fit_hurdle_logmix_mixed(work, cols)
+        payload = _fit_hurdle_logmix_mixed(work, cols, clf_cols=clf_cols)
     """
-    members = [_fit_hurdle_logmix_c0(train_df, cols, seed=s) for s in seeds_lgb]
-    members.append(_fit_catboost_hurdle_member(train_df, cols, seed=seed_cb))
+    members = [_fit_hurdle_logmix_c0(train_df, cols, seed=s, clf_cols=clf_cols) for s in seeds_lgb]
+    members.append(_fit_catboost_hurdle_member(train_df, cols, seed=seed_cb, clf_cols=clf_cols))
     return {"members": members, "cols": cols}
 
 
@@ -2284,6 +2297,171 @@ def fit_arm(name: str, train_df: pl.DataFrame, q50: float, q90: float) -> ArmMod
                 "cols": cols,
             },
         )
+    if name == "stack_h87_hurdle4_mixed":
+        from ltv_data import INTENT_DYNAMICS_FEATURES
+
+        work, params = _prepare_h65_stack(train_df, need_intent=True)
+        cols = _h65_feature_cols()
+        clf_cols = _h65_feature_cols(INTENT_DYNAMICS_FEATURES)
+        extra_kw = {
+            "extra_params": {
+                "min_data_in_leaf": 60,
+                "feature_fraction": 0.8,
+                "lambda_l2": 3.0,
+            }
+        }
+        members = [
+            _fit_lgb_channel(work, cols, seed, **extra_kw) for seed in (42, 7, 99)
+        ]
+        hurdle_members = [
+            _fit_hurdle_logmix_c0(work, cols, seed=s, clf_cols=clf_cols)
+            for s in (42, 43, 44)
+        ]
+        hurdle_members.append(
+            _fit_catboost_hurdle_member(work, cols, seed=45, clf_cols=clf_cols)
+        )
+        hurdle = {
+            "members": hurdle_members,
+            "cols": cols,
+        }
+        return ArmModel(
+            "stack_blend_hurdle3",
+            {
+                "blend_members": members,
+                "hurdle": hurdle,
+                "blend_w": 0.30,
+                "hurdle_w": 0.70,
+                "need_btyd": True,
+                "bgnbd": params,
+                "need_ipi": True,
+                "need_ch_lags": True,
+                "need_intent": True,
+                "cols": cols,
+            },
+        )
+    if name == "stack_h87_mu_rord":
+        from ltv_data import INTENT_DYNAMICS_FEATURES, RECENT_ORD_FEATURES
+
+        work, params = _prepare_h65_stack(train_df, need_intent=True, need_rord=True)
+        base_cols = _h65_feature_cols()
+        clf_cols = _h65_feature_cols(INTENT_DYNAMICS_FEATURES)
+        mu_cols = _h65_feature_cols(RECENT_ORD_FEATURES)
+        extra_kw = {
+            "extra_params": {
+                "min_data_in_leaf": 60,
+                "feature_fraction": 0.8,
+                "lambda_l2": 3.0,
+            }
+        }
+        members = [
+            _fit_lgb_channel(work, base_cols, seed, **extra_kw) for seed in (42, 7, 99)
+        ]
+        hurdle = {
+            "members": [
+                _fit_hurdle_logmix_c0(work, mu_cols, seed=s, clf_cols=clf_cols)
+                for s in (42, 43, 44)
+            ],
+            "cols": mu_cols,
+        }
+        return ArmModel(
+            "stack_blend_hurdle3",
+            {
+                "blend_members": members,
+                "hurdle": hurdle,
+                "blend_w": 0.30,
+                "hurdle_w": 0.70,
+                "need_btyd": True,
+                "bgnbd": params,
+                "need_ipi": True,
+                "need_ch_lags": True,
+                "need_intent": True,
+                "need_rord": True,
+                "cols": mu_cols,
+            },
+        )
+    if name == "stack_h87_dual_routing_cb":
+        from ltv_data import INTENT_DYNAMICS_FEATURES, RECENT_ORD_FEATURES
+
+        work, params = _prepare_h65_stack(train_df, need_intent=True, need_rord=True)
+        base_cols = _h65_feature_cols()
+        clf_cols = _h65_feature_cols(INTENT_DYNAMICS_FEATURES)
+        mu_cols = _h65_feature_cols(RECENT_ORD_FEATURES)
+        extra_kw = {
+            "extra_params": {
+                "min_data_in_leaf": 60,
+                "feature_fraction": 0.8,
+                "lambda_l2": 3.0,
+            }
+        }
+        members = [
+            _fit_lgb_channel(work, base_cols, seed, **extra_kw) for seed in (42, 7, 99)
+        ]
+        hurdle_members = [
+            _fit_hurdle_logmix_c0(work, mu_cols, seed=s, clf_cols=clf_cols)
+            for s in (42, 43, 44)
+        ]
+        hurdle_members.append(
+            _fit_catboost_hurdle_member(work, mu_cols, seed=45, clf_cols=clf_cols)
+        )
+        hurdle = {
+            "members": hurdle_members,
+            "cols": mu_cols,
+        }
+        return ArmModel(
+            "stack_blend_hurdle3",
+            {
+                "blend_members": members,
+                "hurdle": hurdle,
+                "blend_w": 0.30,
+                "hurdle_w": 0.70,
+                "need_btyd": True,
+                "bgnbd": params,
+                "need_ipi": True,
+                "need_ch_lags": True,
+                "need_intent": True,
+                "need_rord": True,
+                "cols": mu_cols,
+            },
+        )
+    if name == "stack_h87_soft_temp":
+        from ltv_data import INTENT_DYNAMICS_FEATURES
+
+        work, params = _prepare_h65_stack(train_df, need_intent=True)
+        cols = _h65_feature_cols()
+        clf_cols = _h65_feature_cols(INTENT_DYNAMICS_FEATURES)
+        extra_kw = {
+            "extra_params": {
+                "min_data_in_leaf": 60,
+                "feature_fraction": 0.8,
+                "lambda_l2": 3.0,
+            }
+        }
+        members = [
+            _fit_lgb_channel(work, cols, seed, **extra_kw) for seed in (42, 7, 99)
+        ]
+        hurdle = {
+            "members": [
+                _fit_hurdle_logmix_c0(work, cols, seed=s, clf_cols=clf_cols)
+                for s in (42, 43, 44)
+            ],
+            "cols": cols,
+            "temperature": 1.05,
+        }
+        return ArmModel(
+            "stack_blend_hurdle3",
+            {
+                "blend_members": members,
+                "hurdle": hurdle,
+                "blend_w": 0.30,
+                "hurdle_w": 0.70,
+                "need_btyd": True,
+                "bgnbd": params,
+                "need_ipi": True,
+                "need_ch_lags": True,
+                "need_intent": True,
+                "cols": cols,
+            },
+        )
     raise ValueError(name)
 
 
@@ -2462,6 +2640,7 @@ def predict_arm(model: ArmModel, eval_df: pl.DataFrame) -> np.ndarray:
             need_v3funnel=bool(p.get("need_v3funnel")),
             need_cohortknn=bool(p.get("need_cohortknn")),
             need_intent=bool(p.get("need_intent")),
+            need_rord=bool(p.get("need_rord")),
         )
         if p.get("need_chbal"):
             from ltv_data import attach_channel_balance

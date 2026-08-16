@@ -17,7 +17,7 @@
 2. Выбери до **N=`workers`** гипотез из `future/` **разных типов/линий**; не три `refine` одной линии. Не повторяй линии из `banned_lines` и cemetery в past. У каждой — поле **Исследование:** → brief.
 3. Реализуй и прогони эксперимент **средствами целевого проекта** (раннер / ноутбук / CI — как принято у продукта). Сохрани воспроизводимый артефакт: идентификатор прогона, параметры treatment, метрики primary (и holdout при необходимости), путь к `meta`/логу.
 4. Сравни treatment с `baselines.control` и `baselines.champion` по правилам `acceptance` и [`METRICS.md`](knowledge/METRICS.md). Статус: ✅ / ⚠️ / ❌. Если `require_holdout_for_promote` — без успешного holdout не ставить ✅.
-5. Удали протестированное из `future/` (без дублей). Запиши отчёт в `knowledge/past/hxx_slug.md` и строку в INDEX (шаблон — ниже и в [`past/README.md`](knowledge/past/README.md)). В корне `past/` держи ~15 полных отчётов; старше — сверни в [`past/lines/`](knowledge/past/lines/) (см. README).
+5. Удали протестированное из `future/` (без дублей). Запиши отчёт в `knowledge/past/hxx_slug.md` и строку в INDEX (шаблон — ниже и в [`past/README.md`](knowledge/past/README.md)). В корне `past/` держи ~10 полных отчётов; старше — сверни в [`past/lines/`](knowledge/past/lines/) (см. README).
 6. **Исследование (обязательно перед шагом 7):** research pack vs champion (и/или лучший treatment):
    - сводка метрик прогона;
    - cross-run breakdown: **persist** / **fixed** / **regress** по primary error-классам из METRICS;

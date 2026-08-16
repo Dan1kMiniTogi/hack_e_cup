@@ -2,7 +2,7 @@
 
 **Champion: H87** `stack_h65_hurdle3_clf_intent` · primary **1.689383** · holdout **1.738805**. Предыдущий H78 1.689400 / 1.738825.
 
-Синтез: [`SYNTHESIS.md`](SYNTHESIS.md). Линии: [`lines/`](lines/). Активные отчёты (~15): `h74_*.md`…`h87_*.md` в корне. H70–H73 свёрнуты в [`lines/05_hurdle_stack.md`](lines/05_hurdle_stack.md).
+Синтез: [`SYNTHESIS.md`](SYNTHESIS.md). Линии: [`lines/`](lines/). Активные отчёты (**10**): H65, H75, H78–H80, H82, H84–H87. H47–H64/H66–H77/H81/H83 — [`lines/`](lines/).
 
 Почти весь выигрыш — H04 (−0.487) и две головы H05 (−0.009). H48→H59→H65→H70 hurdle; H73 stack 0.30/0.70; **H78** hurdle 3-seed; **H87** intent только в clf (−0.000017 / −0.000020 vs H78).
 
@@ -81,12 +81,12 @@
 | H70 | ✅ | pivot | rmsle 1.690181 | vs H65 both better | prev champ hurdle-logmix c=0 |
 | H71 | ❌ | refine | rmsle 1.691743 | хуже H70/H65 | dual-capacity 47/95 |
 | H72 | ❌ | explore | rmsle 1.690623 | хуже H70; primary лучше H65 | 0.70 dual+0.30 hurdle |
-| H73 | ✅ | refine | rmsle 1.690065 | vs H70 both better | **champion** 0.30 H65+0.70 hurdle |
+| H73 | ✅ | refine | rmsle 1.690065 | vs H70 both better | 0.30 H65+0.70 hurdle |
 | H74 | ⚠️ | explore | rmsle 1.689840 | holdout 1.739585 worse | knn на hurdle |
 | H75 | ⚠️ | refine | rmsle 1.689143 | holdout vs H73 worse | 3-seed hurdle; best solo primary |
 | H76 | ❌ | pivot | rmsle 1.690824 | хуже H73 both | dual-channel hurdle |
 | H77 | ⚠️ | explore | rmsle 1.689251 | holdout worse | intent dynamics |
-| H78 | ✅ | refine | rmsle 1.689400 | vs H73 both better | **champion** 0.30 H65+0.70 hurdle3 |
+| H78 | ✅ | refine | rmsle 1.689400 | vs H73 both better | prev champ 0.30 H65+0.70 hurdle3 |
 | H79 | ⚠️ | explore | rmsle 1.689218 | holdout vs H78 worse | 0.15/0.85; primary↑ holdout↓ |
 | H80 | ⚠️ | explore | rmsle 1.689363 | holdout vs H78 worse | intent в hurdle3 стека |
 | H81 | ❌ | pivot | rmsle 1.692937 | хуже H78 both | logit T=0.9 |
@@ -97,4 +97,4 @@
 | H86 | ❌ | explore | rmsle 1.689650 | хуже H78 primary | multi-depth 31/63/95 |
 | H87 | ✅ | pivot | rmsle 1.689383 | vs H78 both better | **champion** intent только в clf |
 
-Легенда status: ✅ принята · ⚠️ кандидат / нужен holdout · ❌ отклонена. Полный отчёт Hx → корень `past/` (окно ~15) или свёртка в [`lines/`](lines/).
+Легенда status: ✅ принята · ⚠️ кандидат / нужен holdout · ❌ отклонена. Полный отчёт Hx → корень `past/` (окно **10**) или свёртка в [`lines/`](lines/).
