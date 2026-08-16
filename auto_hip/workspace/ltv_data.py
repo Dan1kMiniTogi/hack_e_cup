@@ -645,6 +645,11 @@ INTENT_DYNAMICS_FEATURES = [
     "hot_cart_no_ord_7d",
     "search_vs_cat_shift",
 ]
+CHANNEL_BALANCE_FEATURES = [
+    "cat_gmv_dominance_30d",
+    "channel_entropy_30d",
+    "search_to_cat_ord_ratio_90d",
+]
 
 
 def attach_intent_dynamics(df: pl.DataFrame) -> pl.DataFrame:
@@ -677,6 +682,40 @@ def attach_intent_dynamics(df: pl.DataFrame) -> pl.DataFrame:
             pl.col("gmv_search_sum_90d")
             / (pl.col("gmv_search_sum_90d") + pl.col("gmv_cat_sum_90d") + 1.0)
         ),
+    )
+
+
+def attach_channel_balance(df: pl.DataFrame) -> pl.DataFrame:
+    """Relative search/catalog mix features for dual-head regularization.
+
+    Args:
+        df: Cutoff table with gmv channel windows and funnel to_ord sums.
+            Attaches funnel if search_to_ord_sum_90d is missing.
+
+    Returns:
+        Same rows plus CHANNEL_BALANCE_FEATURES (idempotent).
+
+    Example:
+        work = attach_channel_balance(load_named("primary"))
+    """
+    if "cat_gmv_dominance_30d" in df.columns:
+        return df
+    work = attach_funnel(df) if "search_to_ord_sum_90d" not in df.columns else df
+    eps = 1e-9
+    return work.with_columns(
+        cat_gmv_dominance_30d=pl.col("gmv_cat_sum_30d")
+        / (pl.col("gmv_sum_30d") + 1.0),
+        search_to_cat_ord_ratio_90d=(pl.col("search_to_ord_sum_90d") + 1.0)
+        / (pl.col("cat_to_ord_sum_90d") + 1.0),
+    ).with_columns(
+        channel_entropy_30d=(
+            -(
+                (pl.col("gmv_search_sum_30d") / (pl.col("gmv_sum_30d") + eps) + eps).log()
+                * (pl.col("gmv_search_sum_30d") / (pl.col("gmv_sum_30d") + eps))
+                + (pl.col("gmv_cat_sum_30d") / (pl.col("gmv_sum_30d") + eps) + eps).log()
+                * (pl.col("gmv_cat_sum_30d") / (pl.col("gmv_sum_30d") + eps))
+            )
+        ).fill_nan(0.0),
     )
 
 
