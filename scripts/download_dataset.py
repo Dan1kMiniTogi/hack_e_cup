@@ -57,7 +57,8 @@ def download_dataset(*, force: bool = False) -> Path:
 
     _ensure_gdown()
     gdown = importlib.import_module("gdown")
-    gdown.download(id=FILE_ID, output=str(DEST), quiet=False, fuzzy=True)
+    url = f"https://drive.google.com/uc?id={FILE_ID}"
+    gdown.download(url, str(DEST), quiet=False)
     if not _is_complete(DEST):
         size = DEST.stat().st_size if DEST.exists() else 0
         raise RuntimeError(

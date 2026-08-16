@@ -19,13 +19,13 @@ Scorecard — [`INDEX.md`](INDEX.md). Линии — [`lines/`](lines/). Акт�
 | H70 → H73 | **−0.00012** | Stack 0.30 H65 + 0.70 hurdle (holdout −0.00053). |
 | H73 → H78 | **−0.00067** | Тот же стек, hurdle → 3-seed bagging (holdout −0.00022). |
 
-H79 веса 0.15/0.85 ⚠️ vs H78. H76 dual-channel ❌. Public LB H65 ≈ 1.6619 при offline ~1.691 — грузить `submit_78.csv`.
+H79 веса 0.15/0.85 ⚠️ vs H78. H80 intent в стеке ⚠️ (шум). H81 T=0.9 ❌. H82 mixed LGB+CB ⚠️ **лучший holdout 1.738559**. H83 chbal ❌. Public LB H65 ≈ 1.6619 — грузить `submit_78.csv`.
 
 ## Дыры H78
 
 1. mid hist_gmv всё ещё тяжёлый.
 2. Веса стека исчерпаны (стоп refine весов).
-3. Intent/knn дают primary без holdout — только внутри H78-стека.
+3. H82 holdout-сигнал без primary — склейка 3LGB+CB или blend H78⊕H82.
 
 ## Линии (навигация)
 

@@ -20,6 +20,8 @@
 | Calendar как промоут | H49, H58 | holdout fail |
 | Funnel / channel-BTYD / channel-recency | H47, H51, H55 | хуже H48-стека |
 | Dual-channel независимый hurdle | H76 | хуже единого P(y>0) |
+| Logit temperature T<1 | H81 | mean_pred↑ RMSLE↑ both |
+| Channel balance ratios на H78 | H83 | шум / коллинеарность |
 | Naive scale / blend | H02, H10 | вырождение или шум |
 
 ## Микро-тюны (шум, не линия)

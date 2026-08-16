@@ -2,7 +2,7 @@
 
 **Champion: H78** `stack_h65_hurdle3seed` · primary **1.689400** · holdout **1.738825**. Предыдущий H73 1.690065 / 1.739049.
 
-Синтез: [`SYNTHESIS.md`](SYNTHESIS.md). Линии: [`lines/`](lines/). Активные отчёты (~15): `h65_*.md`…`h79_*.md` в корне. Аудит H45: [`../analytics/results/004_h45_debug.md`](../analytics/results/004_h45_debug.md).
+Синтез: [`SYNTHESIS.md`](SYNTHESIS.md). Линии: [`lines/`](lines/). Активные отчёты (~15): `h70_*.md`…`h83_*.md` в корне. Аудит H45: [`../analytics/results/004_h45_debug.md`](../analytics/results/004_h45_debug.md).
 
 Почти весь выигрыш — H04 (−0.487) и две головы H05 (−0.009). H48→H59→H65→H70 hurdle; H73 stack 0.30/0.70; **H78 = H73 + hurdle 3-seed (−0.00067 / −0.00022 vs H73)**.
 
@@ -88,5 +88,9 @@
 | H77 | ⚠️ | explore | rmsle 1.689251 | holdout worse | intent dynamics |
 | H78 | ✅ | refine | rmsle 1.689400 | vs H73 both better | **champion** 0.30 H65+0.70 hurdle3 |
 | H79 | ⚠️ | explore | rmsle 1.689218 | holdout vs H78 worse | 0.15/0.85; primary↑ holdout↓ |
+| H80 | ⚠️ | explore | rmsle 1.689363 | holdout vs H78 worse | intent в hurdle3 стека |
+| H81 | ❌ | pivot | rmsle 1.692937 | хуже H78 both | logit T=0.9 |
+| H82 | ⚠️ | explore | rmsle 1.689586 | holdout **1.738559** better | LGB+CB mixed hurdle |
+| H83 | ❌ | refine | rmsle 1.689551 | primary worse | channel balance |
 
 Легенда status: ✅ принята · ⚠️ кандидат / нужен holdout · ❌ отклонена. Полный отчёт Hx → корень `past/` (окно ~15) или свёртка в [`lines/`](lines/).

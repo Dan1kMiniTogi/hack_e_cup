@@ -28,6 +28,6 @@
 
 ## Устойчивые выводы
 
-- Champion **H78** `stack_h65_hurdle3seed`: primary **1.689400** / holdout **1.738825** (−0.00067 / −0.00022 vs H73). Сабмит: `workspace/submit_78.csv`.
-- H79 0.15/0.85: primary лучше H78, holdout хуже → ⚠️. H76 dual-channel ❌; knn/intent/3seed-solo без стека — holdout-риск.
-- Public LB H65 ≈ 1.6619 при офлайн ~1.691 — офлайн пессимистичен; грузить H78.
+- Champion **H78** `stack_h65_hurdle3seed`: primary **1.689400** / holdout **1.738825**. Сабмит: `workspace/submit_78.csv`.
+- H80–H83: intent/T=0.9/chbal не бьют H78; **H82 mixed LGB+CB** дал лучший holdout **1.738559** при primary 1.689586 ⚠️.
+- Следующее: 4-member hurdle (3 LGB + CB) или фиксированный blend H78⊕H82; не T<1 и не веса стека.
